@@ -1,30 +1,32 @@
 # Vietnamese AI Video Dubber
 
-Công cụ tự động dịch phụ đề và lồng tiếng thuyết minh tiếng Việt cho video nước ngoài (chủ yếu tiếng Anh).
+Automatic subtitle translation and Vietnamese voice-over for foreign-language videos (mostly English).
 
 ```text
-video -> audio -> phụ đề gốc (Whisper) -> dịch sang Việt -> lồng tiếng (Edge-TTS / VieNeu-TTS) -> MP4 kèm phụ đề Việt
+video -> audio -> original subtitles (Whisper) -> translate to Vietnamese -> voice-over (Edge-TTS / VieNeu-TTS) -> MP4 with Vietnamese subtitles
 ```
 
-## Tính năng
+> Tiếng Việt: xem [README_vi.md](README_vi.md)
 
-- **Speech-to-Text**: Nhận diện giọng nói bằng Faster-Whisper (chạy offline, không tốn phí).
-- **Dịch thuật**: 4 lựa chọn — Google Translate (miễn phí), Ollama Local LLM, HuggingFace Hy-MT2-7B GGUF (trực tiếp, không cần Ollama), hoặc EnViT5 offline (Transformers).
-- **Thuyết minh AI (TTS)**: Edge-TTS (online, Microsoft Neural) hoặc VieNeu-TTS (offline, 23 giọng Việt).
-- **Xử lý Video**: Tự động khớp timeline âm thanh (atempo), burn phụ đề hoặc mux soft sub bằng FFmpeg.
-- **Không phụ thuộc API trả phí hay Supertonic ONNX cồng kềnh.**
+## Features
 
-## Yêu cầu hệ thống
+- **Speech-to-Text**: Faster-Whisper transcription, runs offline for free.
+- **Translation**: 4 options — Google Translate (free), Ollama local LLM, HuggingFace Hy-MT2-7B GGUF (direct, no Ollama), or EnViT5 offline (Transformers).
+- **AI Voice-over (TTS)**: Edge-TTS (online, Microsoft Neural) or VieNeu-TTS (offline, 23 Vietnamese voices).
+- **Video processing**: Automatic timeline alignment (atempo), burn subtitles or mux soft subs with FFmpeg.
+- **No paid APIs, no heavy Supertonic ONNX.**
 
-| Thành phần | Bắt buộc | Ghi chú |
+## Requirements
+
+| Component | Required | Notes |
 |---|---|---|
 | Python | ✔ | ≥ 3.10 |
-| [uv](https://docs.astral.sh/uv/) | ✔ | Quản lý package + môi trường ảo |
-| [ffmpeg](https://ffmpeg.org/) | ✔ | Xử lý video/audio |
-| GPU NVIDIA (CUDA) | ✖ | Khuyến khích — tăng tốc Whisper & EnViT5; không có thì chạy CPU (chậm hơn) |
-| Internet | Chỉ giai đoạn setup | Cần khi cài đặt và tải model lần đầu; Google Translate cần mạng mỗi lần dùng |
+| [uv](https://docs.astral.sh/uv/) | ✔ | Package + virtualenv management |
+| [ffmpeg](https://ffmpeg.org/) | ✔ | Video/audio processing |
+| NVIDIA GPU (CUDA) | ✖ | Recommended — speeds up Whisper & EnViT5; CPU works but slower |
+| Internet | Setup only | Needed for install and first-time model download; Google Translate needs a connection every time |
 
-Cài đặt nền tảng:
+Platform install:
 
 ```bash
 # Ubuntu/Debian
@@ -35,162 +37,162 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 brew install ffmpeg git
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Windows: tải ffmpeg tại https://ffmpeg.org/download.html
-# rồi cài uv:  powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+# Windows: get ffmpeg at https://ffmpeg.org/download.html
+# then uv:  powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-## Cài đặt và chạy
+## Install & run
 
 ```bash
-git clone <địa-chỉ-repo> vi-video-dubber
+git clone <repo-url> vi-video-dubber
 cd vi-video-dubber
-uv sync --frozen               # cài đặt toàn bộ dependencies (bao gồm VieNeu-TTS)
-uv run python app.py           # khởi động server
+uv sync --frozen               # installs all dependencies (incl. VieNeu-TTS)
+uv run python app.py           # start server
 ```
 
-> Lưu ý: `uv sync --frozen` sử dụng lock file đã đóng gói sẵn, tránh lỗi phân giải `veneu` trên một số máy.
+> Note: `uv sync --frozen` uses the pre-resolved lock file, avoiding `vieneu` resolution errors on some machines.
 
-Mở trình duyệt: **http://127.0.0.1:8787**
+Open **http://127.0.0.1:8787** in your browser.
 
-Tải video lên, chọn tùy chọn (provider dịch, lồng tiếng, burn phụ đề) rồi bấm chạy. Kết quả nằm trong thư mục `jobs/<job-id>/`.
+Upload a video, pick your options (translation provider, voice-over, burn subtitles) and run. Results land in `jobs/<job-id>/`.
 
-## Model dịch thuật — chọn cái nào?
+## Translation models — which one?
 
-Chọn "Translation provider" trong giao diện web trước khi tạo job:
+Pick "Translation provider" in the web UI before creating a job:
 
 | | Google Translate | Ollama (Hy-MT2-7B) | HuggingFace Hy-MT2-7B | EnViT5 |
 |---|---|---|---|---|
-| **Cần API key** | Không | Không | Không | Không |
-| **Cần internet khi chạy** | Có | Không | Không | Không |
-| **Cài đặt** | Không cần | Cài Ollama + pull model | Tự động (tải model lần đầu) | Tự động (tải model lần đầu) |
-| **Dung lượng tải** | 0 | ~4.6 GB (qua Ollama) | ~4.6 GB | ~2.1 GB |
-| **Chất lượng dịch** | Tốt | Tốt nhất (7B LLM) | Tốt nhất (7B LLM) | Khá (T5 base) |
-| **Tốc độ** | Nhanh (online) | Chậm nhất (LLM lớn) | Chậm (LLM lớn) | Nhanh (T5, GPU) |
-| **Phù hợp** | Máy luôn online | Máy offline, cần chất lượng cao | Máy offline, không muốn cài Ollama | Máy offline, cần tốc độ |
+| **API key** | None | None | None | None |
+| **Internet while running** | Yes | No | No | No |
+| **Setup** | None | Install Ollama + pull model | Automatic (first-run download) | Automatic (first-run download) |
+| **Download size** | 0 | ~4.6 GB (via Ollama) | ~4.6 GB | ~2.1 GB |
+| **Translation quality** | Good | Best (7B LLM) | Best (7B LLM) | OK (T5 base) |
+| **Speed** | Fast (online) | Slowest (large LLM) | Slow (large LLM) | Fast (T5, GPU) |
+| **Best for** | Always-online machines | Offline, highest quality | Offline, no Ollama install | Offline, speed matters |
 
-### 1. Google Translate (mặc định)
+### 1. Google Translate (default)
 
-Không cần cài đặt gì — chỉ cần internet. Đây là lựa chọn nhanh nhất để bắt đầu.
+No setup — just internet. The fastest way to get started.
 
-### 2. Ollama — LLM cục bộ
+### 2. Ollama — local LLM
 
 ```bash
-# 1. Cài Ollama: https://ollama.com/download
-# 2. Khởi động & tải model dịch Anh-Việt:
-ollama serve &                        # hoặc chạy app Ollama
+# 1. Install Ollama: https://ollama.com/download
+# 2. Start and pull the English-Vietnamese translation model:
+ollama serve &                        # or run the Ollama app
 ollama pull hf.co/tencent/Hy-MT2-7B-GGUF:Q4_K_M
-# 3. Restart app, chọn "Ollama local" trong giao diện
+# 3. Restart the app, pick "Ollama local" in the UI
 ```
 
-Biến môi trường (tùy chọn):
+Environment variables (optional):
 
-| Biến | Mặc định | Mô tả |
+| Variable | Default | Description |
 |---|---|---|
-| `OLLAMA_MODEL` | `hf.co/tencent/Hy-MT2-7B-GGUF:Q4_K_M` | Model dùng để dịch |
-| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Địa chỉ Ollama server |
-| `OLLAMA_TRANSLATE_BATCH_SIZE` | `20` | Số dòng dịch mỗi lần gọi |
+| `OLLAMA_MODEL` | `hf.co/tencent/Hy-MT2-7B-GGUF:Q4_K_M` | Model used for translation |
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama server address |
+| `OLLAMA_TRANSLATE_BATCH_SIZE` | `20` | Lines translated per call |
 
-### 3. HuggingFace Hy-MT2-7B GGUF — trực tiếp, không cần Ollama
+### 3. HuggingFace Hy-MT2-7B GGUF — direct, no Ollama
 
-Chạy model dịch Anh-Việt `tencent/Hy-MT2-7B-GGUF` trực tiếp từ HuggingFace bằng Transformers (không cần Ollama server). Tải model tự động (~4.6 GB) vào lần dùng đầu:
+Runs `tencent/Hy-MT2-7B-GGUF` directly with llama-cpp-python (no Ollama server). Downloads the model automatically (~4.6 GB) on first use, then runs fully offline:
 
 ```bash
-# Chỉ cần chọn "HuggingFace Hy-MT2-7B (GGUF)" trong giao diện, lần đầu sẽ tải model
+# Just pick "HuggingFace Hy-MT2-7B (GGUF)" in the UI; the model downloads on first run
 ```
 
-Biến môi trường (tùy chọn):
+Environment variables (optional):
 
-| Biến | Mặc định | Mô tả |
+| Variable | Default | Description |
 |---|---|---|
-| `HF_TRANSLATE_REPO` | `tencent/Hy-MT2-7B-GGUF` | Model GGUF trên HuggingFace |
-| `HF_TRANSLATE_BATCH_SIZE` | `20` | Số dòng dịch mỗi lần gọi |
+| `HF_TRANSLATE_REPO` | `tencent/Hy-MT2-7B-GGUF` | HuggingFace GGUF repo |
+| `HF_TRANSLATE_BATCH_SIZE` | `20` | Lines translated per call |
 
-> Lưu ý: GPU có CUDA sẽ tải nhanh hơn; nếu chỉ có CPU, vẫn chạy được nhưng chậm hơn (model 7B là LLM lớn).
+> Note: a CUDA GPU makes loading/warming faster; CPU works but is slower (7B is a large LLM).
 
 ### 4. EnViT5 — offline Transformers
 
-Chạy hoàn toàn offline bằng model `VietAI/envit5-translation`. Tải model tự động (~2.1 GB) vào lần dùng đầu — chạy GPU nếu có CUDA, ngược lại fallback CPU. Không cần cài đặt gì thêm:
+Fully offline with `VietAI/envit5-translation`. Downloads the model automatically (~2.1 GB) on first use — runs on GPU if CUDA is available, falls back to CPU. Nothing extra to install:
 
 ```bash
-# Chỉ cần chọn "EnViT5 (offline GPU)" trong giao diện, lần đầu sẽ tải model
+# Just pick "EnViT5 (offline GPU)" in the UI; the model downloads on first run
 ```
 
-Biến môi trường (tùy chọn):
+Environment variables (optional):
 
-| Biến | Mặc định | Mô tả |
+| Variable | Default | Description |
 |---|---|---|
-| `ENVIT5_MODEL` | `VietAI/envit5-translation` | Tên model trên HuggingFace |
-| `ENVIT5_BATCH_SIZE` | `20` | Số dòng dịch mỗi lần gọi |
+| `ENVIT5_MODEL` | `VietAI/envit5-translation` | HuggingFace model name |
+| `ENVIT5_BATCH_SIZE` | `20` | Lines translated per call |
 
-> Lưu ý GPU: nếu `uv run python app.py` báo lỗi triton không biên dịch được CUDA, đặt `CC=/usr/bin/gcc` trước khi chạy. Code đã tự đặt fallback này khi dùng EnViT5.
+> GPU note: if `uv run python app.py` reports a triton CUDA compile error, set `CC=/usr/bin/gcc` before running. The code sets this fallback automatically when using EnViT5.
 
-## Cấu hình Whisper (nhận diện giọng nói)
+## Whisper config (speech recognition)
 
-Mặc định chạy CPU với int8 (không cần GPU). Với GPU, đặt biến môi trường:
+Defaults to CPU + int8 (no GPU needed). For GPU:
 
 ```bash
 WHISPER_DEVICE=cuda WHISPER_COMPUTE_TYPE=float16 uv run python app.py
 ```
 
-| Biến | Mặc định | Mô tả |
+| Variable | Default | Description |
 |---|---|---|
-| `WHISPER_DEVICE` | `cpu` | `cpu` hoặc `cuda` |
+| `WHISPER_DEVICE` | `cpu` | `cpu` or `cuda` |
 | `WHISPER_COMPUTE_TYPE` | `int8` | `int8`/`float16`/`float32` |
-| `WHISPER_BEAM_SIZE` | `1` | Beam search — cao hơn = chính xác hơn, chậm hơn |
+| `WHISPER_BEAM_SIZE` | `1` | Beam search — higher = more accurate, slower |
 
-Model Whisper mặc định là `small` (chọn trong giao diện). Lần đầu chạy sẽ tải từ HuggingFace.
+Default Whisper model is `small` (selectable in the UI). First run downloads it from HuggingFace.
 
-## Cấu hình TTS (lồng tiếng)
+## TTS config (voice-over)
 
-Chọn "Engine lồng tiếng" trong giao diện web trước khi tạo job:
+Pick "Engine lồng tiếng" (voice-over engine) in the web UI before creating a job:
 
 | | Edge-TTS | VieNeu-TTS |
 |---|---|---|
-| **Trạng thái** | Online (Microsoft) | **Offline** |
-| **Voices** | 2 (Hoài My, Nam Minh) | **23** (3 miền Bắc/Trung/Nam) |
+| **Status** | Online (Microsoft) | **Offline** |
+| **Voices** | 2 (Hoai My, Nam Minh) | **23** (North/Central/South dialects) |
 | **Audio** | 44.1 kHz | **48 kHz** |
-| **Voice cloning** | ❌ | ✅ (3-8s clip) |
+| **Voice cloning** | ❌ | ✅ (3–8s clip) |
 | **Emotion cues** | ❌ | ✅ `[cười]` `[thở dài]` `[hắng giọng]` |
-| **Cài đặt** | Không cần | Tự động qua `uv sync` |
-| **Model size** | 0 | ~900 MB (tải lần đầu) |
-| **Phù hợp** | Máy luôn online | Máy offline, nhiều giọng, clone giọng |
+| **Setup** | None | Automatic via `uv sync` |
+| **Model size** | 0 | ~900 MB (first-run download) |
+| **Best for** | Always-online machines | Offline, many voices, voice cloning |
 
-### 1. Edge-TTS (mặc định)
+### 1. Edge-TTS (default)
 
-Dùng Edge-TTS miễn phí, cần internet. Giọng mặc định: `vi-VN-HoaiMyNeural` (nữ) — có thể đổi trong giao diện; giọng `vi-VN-NamMinhNeural` (nam).
+Free Microsoft Edge-TTS, needs internet. Default voice: `vi-VN-HoaiMyNeural` (female) — changeable in the UI; `vi-VN-NamMinhNeural` (male) is available too.
 
 ### 2. VieNeu-TTS (offline)
 
-Chạy hoàn toàn offline bằng VieNeu-TTS v3 Turbo (48 kHz, 23 giọng). Tải model tự động (~900 MB) lần đầu tiên.
+Fully offline with VieNeu-TTS v3 Turbo (48 kHz, 23 voices). Downloads the model automatically (~900 MB) on first use.
 
 ```bash
-# Chỉ cần chọn "VieNeu-TTS (offline)" trong giao diện, lần đầu sẽ tải model
+# Just pick "VieNeu-TTS (offline)" in the UI; the model downloads on first run
 ```
 
-Biến môi trường (tùy chọn):
+Environment variables (optional):
 
-| Biến | Mặc định | Mô tả |
+| Variable | Default | Description |
 |---|---|---|
-| (không cần) | — | `vieneu` package tự tải model từ HuggingFace |
+| (none) | — | the `vieneu` package autoloads its model from HuggingFace |
 
-> Lưu ý: model được tải từ HuggingFace lần đầu (~900 MB). Sau đó chạy offline hoàn toàn, không cần internet.
+> Note: the model downloads from HuggingFace on first run (~900 MB). After that it runs fully offline.
 
-## API (dành cho tích hợp)
+## API (integration)
 
-- `POST /api/jobs` — tạo job (multipart: `file` + form options)
-- `GET /api/queue` — danh sách jobs
-- `GET /api/jobs/{id}` — trạng thái job
-- `DELETE /api/jobs/{id}` — xóa job (job đang chạy → 409)
-- `GET /api/jobs/{id}/download/{kind}` — tải kết quả
-- `GET /api/config` — cấu hình & kiểm tra Ollama
+- `POST /api/jobs` — create a job (multipart: `file` + form options)
+- `GET /api/queue` — list jobs
+- `GET /api/jobs/{id}` — job status
+- `DELETE /api/jobs/{id}` — delete a job (running job → 409)
+- `GET /api/jobs/{id}/download/{kind}` — download a result
+- `GET /api/config` — config & Ollama reachability check
 
-## Câu hỏi thường gặp
+## FAQ
 
-**Dịch bị sót dòng (giữ nguyên tiếng Anh)?**
-Mỗi dòng lỗi sẽ xuất hiện "Cảnh báo" trong kết quả job. Nguyên nhân phổ biến: Google rate-limit (mạng chậm) hoặc Ollama hết context. Dòng lỗi sẽ tự dịch lại riêng lẻ; nếu vẫn lỗi thì giữ bản gốc tiếng Anh thay vì dịch sai.
+**Lines stay in English (not translated)?**
+Each failed line shows up as a "Cảnh báo" (warning) in the job result. Common causes: Google rate-limit (slow network) or Ollama running out of context. Failed lines are retried individually; if they still fail, the original English is kept instead of a wrong translation.
 
-**Muốn dùng model dịch hay hơn?**
-Đổi `OLLAMA_MODEL` sang bản lớn hơn (ví dụ bản Q6_K hay full precision) — chậm hơn nhưng chất lượng tốt hơn.
+**Want a better translation model?**
+Switch `OLLAMA_MODEL` to a larger quant (e.g. Q6_K or full precision) — slower but higher quality.
 
-**File quá lớn?**
-Giới hạn upload 2 GB mỗi file, tối đa 50 jobs, file kết quả tự xóa sau 6 tiếng.
+**File too large?**
+Limit is 2 GB per upload, max 50 jobs, and result files are auto-deleted after 6 hours.
