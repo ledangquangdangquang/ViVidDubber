@@ -440,11 +440,12 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
         <div class="field">
           <label for="translationProvider">Translation provider</label>
           <select id="translationProvider" name="translation_provider">
-            <option value="google" selected>Google Translate (free)</option>
-            <option value="ollama">Ollama local</option>
-            <option value="envit5">EnViT5 (offline GPU)</option>
-          </select>
-          <span class="field-help" id="translationProviderHelp">Google Translate free, không cần API key</span>
+             <option value="google" selected>Google Translate (free)</option>
+             <option value="ollama">Ollama local</option>
+             <option value="envit5">EnViT5 (offline GPU)</option>
+             <option value="huggingface">HuggingFace Hy-MT2-7B (GGUF)</option>
+           </select>
+           <span class="field-help" id="translationProviderHelp">Google Translate free, không cần API key</span>
         </div>
 
         <input type="hidden" id="targetLang" name="target_lang" value="vi">
@@ -908,14 +909,21 @@ function updateTranslationProviderUi() {
     serverStatus.dataset.state = ready ? 'ready' : 'error';
     return;
   }
-  if (translationProvider.value === 'envit5') {
-    translationProviderHelp.textContent = 'EnViT5 offline · tải model lần đầu từ HuggingFace · GPU nếu có';
-    configNote.textContent = 'EnViT5 local (Transformers) · chạy GPU · offline sau khi tải model';
-    serverStatus.textContent = 'ENVIT5 OFFLINE';
-    serverStatus.dataset.state = 'ready';
-    return;
-  }
-}
+   if (translationProvider.value === 'envit5') {
+     translationProviderHelp.textContent = 'EnViT5 offline · tải model lần đầu từ HuggingFace · GPU nếu có';
+     configNote.textContent = 'EnViT5 local (Transformers) · chạy GPU · offline sau khi tải model';
+     serverStatus.textContent = 'ENVIT5 OFFLINE';
+     serverStatus.dataset.state = 'ready';
+     return;
+   }
+   if (translationProvider.value === 'huggingface') {
+     translationProviderHelp.textContent = 'Hy-MT2-7B GGUF offline · tải model từ HuggingFace · GPU nếu có';
+     configNote.textContent = 'HuggingFace direct · Transformers · tải model ~4.6GB · offline sau lần đầu';
+     serverStatus.textContent = 'HF MODEL';
+     serverStatus.dataset.state = 'ready';
+     return;
+   }
+ }
 
 function updateTtsProviderUi() {
   if (!serverConfig) return;

@@ -27,7 +27,7 @@ JOB_TTL_SECONDS = 3600 * 6  # 6 hours
 from pipeline.media import burn_subtitles, extract_audio, mux_soft_subtitles, probe_media
 from pipeline.subtitle import parse_srt, write_srt
 from pipeline.transcribe import FasterWhisperTranscriber
-from pipeline.translate import EnViT5Translator, GoogleTranslator, OllamaTranslator
+from pipeline.translate import EnViT5Translator, GoogleTranslator, HuggingFaceTranslator, OllamaTranslator
 from pipeline.tts import create_vietnamese_dub
 
 
@@ -231,7 +231,7 @@ async def create_job(
 ):
     if export_mode not in {"soft", "burn"}:
         raise HTTPException(status_code=400, detail="Unsupported subtitle export mode.")
-    if translation_provider not in {"google", "ollama", "envit5"}:
+    if translation_provider not in {"google", "ollama", "envit5", "huggingface"}:
         raise HTTPException(status_code=400, detail="Unsupported translation provider.")
 
     _cleanup_jobs()
@@ -392,6 +392,8 @@ def _run_job(job_id: str) -> None:
                 translator = OllamaTranslator()
             elif provider == "envit5":
                 translator = EnViT5Translator()
+            elif provider == "huggingface":
+                translator = HuggingFaceTranslator()
             else:
                 translator = GoogleTranslator()
 

@@ -342,3 +342,114 @@ class EnViT5Translator:
                 text = text[len(prefix):].strip()
             result.append(text)
         return result
+
+
+_HF_SYSTEM_PROMPT = (
+    "You are a professional subtitle translator. "
+    "Keep each line short and concise for subtitle timing. "
+    "Output ONLY the translation text for each line, one per line. "
+    "Do NOT repeat the line number in the translation text. "
+    "No prefixes, no numbers, no extra text."
+)
+
+
+class HuggingFaceTranslator:
+    """Offline translation with tencent/Hy-MT2-7B-GGUF directly from HuggingFace (Transformers)."""
+    _tokenizer = None
+    _model = None
+    _lock = __import__("threading").Lock()
+    _HF_MODEL = "tencent/Hy-MT2-7B-GGUF"
+
+    def __init__(self, model: str | None = None):
+        self.model = model or os.environ.get("HF_TRANSLATE_MODEL", self._HF_MODEL)
+        self.batch_size = int(os.environ.get("HF_TRANSLATE_BATCH_SIZE", "20"))
+        self.warnings: list[str] = []
+
+    def _lazy_load(self):
+        with self._lock:
+            if self._model is None:
+                try:
+                    from transformers import AutoModelForCausalLM, AutoTokenizer
+                except ImportError as exc:
+                    raise TranslationError(
+                        "HuggingFace translate needs 'transformers' + 'torch'. Install with: "
+                        "uv add transformers torch"
+                    ) from exc
+                os.environ.setdefault("CC", "/usr/bin/gcc")
+                import torch
+                self._tokenizer = AutoTokenizer.from_pretrained(self.model)
+                self._model = AutoModelForCausalLM.from_pretrained(
+                    self.model, device_map="auto", torch_dtype=torch.float16
+                )
+        return self._model, self._tokenizer
+
+    def translate_blocks(
+        self,
+        blocks: list[SubtitleBlock],
+        source_lang: str = "en",
+        target_lang: str = "vi",
+        batch_size: int | None = None,
+    ) -> list[SubtitleBlock]:
+        if not blocks:
+            return []
+        self.warnings = []
+        return _translate_blocks(self, blocks, source_lang, target_lang, batch_size or self.batch_size)
+
+    def _translate_texts(self, texts: list[str], source_lang: str, target_lang: str) -> list[str]:
+        model, tokenizer = self._lazy_load()
+        src_name = _lang_name(source_lang)
+        tgt_name = _lang_name(target_lang)
+        if len(texts) == 1:
+            prompt = f"Translate from {src_name} to {tgt_name}. Keep it short.\n\n{texts[0]}"
+        else:
+            numbered = "\n".join(f"{i+1}. {t}" for i, t in enumerate(texts))
+            prompt = f"Translate from {src_name} to {tgt_name}. Short.\n\n{numbered}"
+
+        messages = [
+            {"role": "system", "content": _HF_SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ]
+        input_ids = tokenizer.apply_chat_template(messages, return_tensors="pt").to(model.device)
+        output_ids = model.generate(
+            input_ids, max_new_tokens=512, temperature=0.1, do_sample=False
+        )
+        output_text = tokenizer.decode(output_ids[0][input_ids.shape[1]:], skip_special_tokens=True).strip()
+        return self._parse_lines(output_text, len(texts))
+
+    @staticmethod
+    def _parse_lines(content: str, expected: int) -> list[str]:
+        numbered_re = re.compile(r"^\d+[\.\)]\s+")
+        leading_digits_re = re.compile(r"^\d+\s+")
+        lines = [l.strip() for l in content.split("\n") if l.strip()]
+
+        parsed = []
+        for line in lines:
+            m = numbered_re.match(line)
+            if m:
+                t = line[m.end():].strip()
+            else:
+                t = leading_digits_re.sub("", line).strip()
+            if t:
+                parsed.append(t)
+
+        if len(parsed) == expected:
+            return parsed
+        if len(parsed) > expected:
+            return parsed[:expected]
+        if len(parsed) < expected:
+            parsed += [""] * (expected - len(parsed))
+            return parsed
+
+        parsed.clear()
+        for line in lines:
+            cleaned = numbered_re.sub("", line).strip()
+            cleaned = leading_digits_re.sub("", cleaned).strip()
+            if cleaned:
+                parsed.append(cleaned)
+
+        if len(parsed) == expected:
+            return parsed
+        if len(parsed) > expected:
+            return parsed[:expected]
+        parsed += [""] * (expected - len(parsed))
+        return parsed
