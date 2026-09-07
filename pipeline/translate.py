@@ -344,15 +344,6 @@ class EnViT5Translator:
         return result
 
 
-_HF_SYSTEM_PROMPT = (
-    "You are a professional subtitle translator. "
-    "Keep each line short and concise for subtitle timing. "
-    "Output ONLY the translation text for each line, one per line. "
-    "Do NOT repeat the line number in the translation text. "
-    "No prefixes, no numbers, no extra text."
-)
-
-
 class HuggingFaceTranslator:
     """Offline translation with tencent/Hy-MT2-7B-GGUF via llama-cpp-python (no Ollama)."""
     _llm = None
@@ -399,22 +390,21 @@ class HuggingFaceTranslator:
 
     def _translate_texts(self, texts: list[str], source_lang: str, target_lang: str) -> list[str]:
         llm = self._lazy_load()
-        src_name = _lang_name(source_lang)
         tgt_name = _lang_name(target_lang)
-        if len(texts) == 1:
-            prompt = f"Translate from {src_name} to {tgt_name}. Keep it short.\n\n{texts[0]}"
-        else:
-            numbered = "\n".join(f"{i+1}. {t}" for i, t in enumerate(texts))
-            prompt = f"Translate from {src_name} to {tgt_name}. Short.\n\n{numbered}"
-
-        messages = [
-            {"role": "system", "content": _HF_SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ]
+        source = "\n".join(texts)
+        prompt = (
+            f"Translate the following text into {tgt_name}. "
+            "Note that you should only output the translated result "
+            "without any additional explanation:\n\n"
+            f"{source}"
+        )
         out = llm.create_chat_completion(
-            messages=messages,
-            temperature=0.1,
-            max_tokens=512,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            top_p=0.6,
+            top_k=20,
+            repeat_penalty=1.05,
+            max_tokens=4096,
         )
         output_text = (out.get("choices", [{}])[0]
                        .get("message", {})
