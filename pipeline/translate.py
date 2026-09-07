@@ -350,10 +350,11 @@ class HuggingFaceTranslator:
     _lock = __import__("threading").Lock()
     _HF_REPO = "tencent/Hy-MT2-7B-GGUF"
     _HF_FILE = "Hy-MT2-7B-Q4_K_M.gguf"
+    _DELIM = "\n-----"
 
     def __init__(self, model: str | None = None):
         self.repo = model or os.environ.get("HF_TRANSLATE_REPO", self._HF_REPO)
-        self.batch_size = int(os.environ.get("HF_TRANSLATE_BATCH_SIZE", "20"))
+        self.batch_size = int(os.environ.get("HF_TRANSLATE_BATCH_SIZE", "8"))
         self.warnings: list[str] = []
 
     def _lazy_load(self):
@@ -389,13 +390,25 @@ class HuggingFaceTranslator:
         return _translate_blocks(self, blocks, source_lang, target_lang, batch_size or self.batch_size)
 
     def _translate_texts(self, texts: list[str], source_lang: str, target_lang: str) -> list[str]:
+        parts = self._request(texts, source_lang, target_lang)
+        expected = len(texts)
+        if len(parts) > expected:
+            parts = parts[:expected]
+        if len(parts) < expected:
+            for i in range(len(parts), expected):
+                single = self._request([texts[i]], source_lang, target_lang)
+                parts.append(single[0] if single else "")
+        return parts
+
+    def _request(self, texts: list[str], source_lang: str, target_lang: str) -> list[str]:
         llm = self._lazy_load()
         tgt_name = _lang_name(target_lang)
-        source = "\n".join(texts)
+        source = self._DELIM.join(texts)
         prompt = (
-            f"Translate the following text into {tgt_name}. "
-            "Note that you should only output the translated result "
-            "without any additional explanation:\n\n"
+            f"Please accurately translate the following text into {tgt_name}. "
+            "You must retain the exact same number of delimiters in the translation. "
+            "Strictly do not omit, escape, or translate these symbols, and pay close "
+            "attention to their placement.\n\n"
             f"{source}"
         )
         out = llm.create_chat_completion(
@@ -410,42 +423,4 @@ class HuggingFaceTranslator:
                        .get("message", {})
                        .get("content", "")
                        .strip())
-        return self._parse_lines(output_text, len(texts))
-
-    @staticmethod
-    def _parse_lines(content: str, expected: int) -> list[str]:
-        numbered_re = re.compile(r"^\d+[\.\)]\s+")
-        leading_digits_re = re.compile(r"^\d+\s+")
-        lines = [l.strip() for l in content.split("\n") if l.strip()]
-
-        parsed = []
-        for line in lines:
-            m = numbered_re.match(line)
-            if m:
-                t = line[m.end():].strip()
-            else:
-                t = leading_digits_re.sub("", line).strip()
-            if t:
-                parsed.append(t)
-
-        if len(parsed) == expected:
-            return parsed
-        if len(parsed) > expected:
-            return parsed[:expected]
-        if len(parsed) < expected:
-            parsed += [""] * (expected - len(parsed))
-            return parsed
-
-        parsed.clear()
-        for line in lines:
-            cleaned = numbered_re.sub("", line).strip()
-            cleaned = leading_digits_re.sub("", cleaned).strip()
-            if cleaned:
-                parsed.append(cleaned)
-
-        if len(parsed) == expected:
-            return parsed
-        if len(parsed) > expected:
-            return parsed[:expected]
-        parsed += [""] * (expected - len(parsed))
-        return parsed
+        return [p.strip() for p in output_text.split(self._DELIM) if p.strip()]
