@@ -102,7 +102,7 @@ Biến môi trường (tùy chọn):
 
 | Biến | Mặc định | Mô tả |
 |---|---|---|
-| `HF_TRANSLATE_MODEL` | `tencent/Hy-MT2-7B-GGUF` | Model GGUF trên HuggingFace |
+| `HF_TRANSLATE_REPO` | `tencent/Hy-MT2-7B-GGUF` | Model GGUF trên HuggingFace |
 | `HF_TRANSLATE_BATCH_SIZE` | `20` | Số dòng dịch mỗi lần gọi |
 
 > Lưu ý: GPU có CUDA sẽ tải nhanh hơn; nếu chỉ có CPU, vẫn chạy được nhưng chậm hơn (model 7B là LLM lớn).

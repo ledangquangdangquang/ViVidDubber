@@ -354,34 +354,36 @@ _HF_SYSTEM_PROMPT = (
 
 
 class HuggingFaceTranslator:
-    """Offline translation with tencent/Hy-MT2-7B-GGUF directly from HuggingFace (Transformers)."""
-    _tokenizer = None
-    _model = None
+    """Offline translation with tencent/Hy-MT2-7B-GGUF via llama-cpp-python (no Ollama)."""
+    _llm = None
     _lock = __import__("threading").Lock()
-    _HF_MODEL = "tencent/Hy-MT2-7B-GGUF"
+    _HF_REPO = "tencent/Hy-MT2-7B-GGUF"
+    _HF_FILE = "Hy-MT2-7B-Q4_K_M.gguf"
 
     def __init__(self, model: str | None = None):
-        self.model = model or os.environ.get("HF_TRANSLATE_MODEL", self._HF_MODEL)
+        self.repo = model or os.environ.get("HF_TRANSLATE_REPO", self._HF_REPO)
         self.batch_size = int(os.environ.get("HF_TRANSLATE_BATCH_SIZE", "20"))
         self.warnings: list[str] = []
 
     def _lazy_load(self):
         with self._lock:
-            if self._model is None:
+            if self._llm is None:
                 try:
-                    from transformers import AutoModelForCausalLM, AutoTokenizer
+                    from huggingface_hub import hf_hub_download
+                    from llama_cpp import Llama
                 except ImportError as exc:
                     raise TranslationError(
-                        "HuggingFace translate needs 'transformers' + 'torch'. Install with: "
-                        "uv add transformers torch"
+                        "HuggingFace translate needs 'llama-cpp-python' + 'huggingface-hub'. "
+                        "Install with: uv add llama-cpp-python huggingface-hub"
                     ) from exc
-                os.environ.setdefault("CC", "/usr/bin/gcc")
-                import torch
-                self._tokenizer = AutoTokenizer.from_pretrained(self.model)
-                self._model = AutoModelForCausalLM.from_pretrained(
-                    self.model, device_map="auto", torch_dtype=torch.float16
+                model_path = hf_hub_download(repo_id=self.repo, filename=self._HF_FILE)
+                self._llm = Llama(
+                    model_path=model_path,
+                    n_ctx=4096,
+                    n_threads=os.cpu_count() or 4,
+                    verbose=False,
                 )
-        return self._model, self._tokenizer
+        return self._llm
 
     def translate_blocks(
         self,
@@ -396,7 +398,7 @@ class HuggingFaceTranslator:
         return _translate_blocks(self, blocks, source_lang, target_lang, batch_size or self.batch_size)
 
     def _translate_texts(self, texts: list[str], source_lang: str, target_lang: str) -> list[str]:
-        model, tokenizer = self._lazy_load()
+        llm = self._lazy_load()
         src_name = _lang_name(source_lang)
         tgt_name = _lang_name(target_lang)
         if len(texts) == 1:
@@ -409,11 +411,15 @@ class HuggingFaceTranslator:
             {"role": "system", "content": _HF_SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ]
-        input_ids = tokenizer.apply_chat_template(messages, return_tensors="pt").to(model.device)
-        output_ids = model.generate(
-            input_ids, max_new_tokens=512, temperature=0.1, do_sample=False
+        out = llm.create_chat_completion(
+            messages=messages,
+            temperature=0.1,
+            max_tokens=512,
         )
-        output_text = tokenizer.decode(output_ids[0][input_ids.shape[1]:], skip_special_tokens=True).strip()
+        output_text = (out.get("choices", [{}])[0]
+                       .get("message", {})
+                       .get("content", "")
+                       .strip())
         return self._parse_lines(output_text, len(texts))
 
     @staticmethod

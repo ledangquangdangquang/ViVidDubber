@@ -14,6 +14,9 @@ dependencies = [
     "edge-tts>=6.1.19",
     "transformers>=4.40.0,<5",
      "torch>=2.0.0",
+    "llama-cpp-python>=0.3.0",
+    "huggingface-hub>=0.20.0",
+    "vieneu>=3.6.4",
 ]
 
 [build-system]
