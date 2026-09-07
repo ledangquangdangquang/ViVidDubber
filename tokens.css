@@ -1,0 +1,63 @@
+/* Hallmark · design tokens · theme: Catppuccin Mocha (custom, brand palette)
+ * paper-band: dark · accent-hue: cool (mauve 277°) · display-style: grotesk-sans
+ * Palette source: Catppuccin Mocha official hex + ZK semantic assignments.
+ */
+:root {
+  color-scheme: dark;
+  --color-paper: #1e1e2e;      /* base */
+  --color-paper-2: #181825;    /* mantle */
+  --color-paper-3: #313244;    /* surface0 */
+  --color-ink: #cdd6f4;        /* text */
+  --color-ink-2: #bac2de;      /* subtext1 */
+  --color-muted: #a6adc8;      /* subtext0 */
+  --color-rule: #45475a;       /* surface1 */
+  --color-rule-2: #6c7086;     /* overlay0 */
+  --color-accent: #cba6f7;     /* mauve */
+  --color-accent-deep: #977dbb; /* mauve blended 30% into base */
+  --color-accent-ink: #1e1e2e;
+  --color-accent-2: #89b4fa;   /* blue */
+  --color-accent-2-soft: #2e354d;
+  --color-accent-3: #74c7ec;   /* sapphire */
+  --color-accent-3-soft: #2b373d;
+  --color-success: #a6e3a1;    /* green */
+  --color-success-soft: #323c32;
+  --color-error: #f38ba8;      /* red */
+  --color-error-soft: #3e2e33;
+  --color-focus: #b4befe;      /* lavender */
+  --color-video: #11111b;      /* crust */
+
+  --font-display: "Space Grotesk", "IBM Plex Sans", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --space-2xs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+  --space-3xl: 4rem;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: clamp(1.75rem, 4vw, 2.75rem);
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 100ms;
+  --dur-short: 180ms;
+  --dur-medium: 300ms;
+
+  --rule-hair: 1px;
+  --rule-strong: 2px;
+  --radius-input: 0.6rem;
+  --radius-card: 1rem;
+  --radius-pill: 999px;
+  --page-max: 92rem;
+  --page-gutter: clamp(1rem, 3vw, 2.5rem);
+}

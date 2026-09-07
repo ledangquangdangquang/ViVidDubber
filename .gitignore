@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+jobs/
+vi_video_dubber.egg-info/
+*.pyc
+*.pyo
+.env
+.uv/
+__editable__*
+*.egg-info/
+*.dist-info/
+.vscode/
+.idea/
+.DS_Store
+

@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Supertonic Video Localizer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/tokens.css">
+<style>
+/* Hallmark · genre: playful · macrostructure: Workbench · theme: Hum · enrichment: live video preview · nav: N7 · footer: Ft5
+ * audience: technical users · use: Vietnamese dubbing with burned subtitles · tone: playful
+ * pre-emit critique: P5 H5 E4 S5 R4 V5 · contrast: pass (40–41) · slop: pass (42–45)
+ * honest: pass (46) · chrome: pass (47) · tokens: pass (48) · mobile: pass (34, 49–57)
+ */
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; overflow-x: clip; }
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.5;
+}
+button, input, select { font: inherit; }
+button, a, select, .file-drop { -webkit-tap-highlight-color: transparent; }
+:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 3px; }
+
+.nav-slab {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  min-height: 4rem;
+  padding: var(--space-sm) var(--page-gutter);
+  border-block-end: var(--rule-strong) solid var(--color-ink);
+  background: var(--color-paper);
+}
+.brand { display: flex; align-items: center; gap: var(--space-sm); min-width: 0; }
+.brand-mark {
+  width: 2rem;
+  height: 2rem;
+  border: var(--rule-strong) solid var(--color-ink);
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: inset -0.3rem -0.2rem 0 var(--color-accent-deep);
+  animation: breathe 4s var(--ease-in-out) infinite;
+}
+.brand-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.025em;
+  white-space: nowrap;
+}
+.brand-suffix { display: none; }
+.server-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-height: 2.25rem;
+  padding-inline: var(--space-sm);
+  border: var(--rule-hair) solid var(--color-rule-2);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+.server-state::before { content: ""; width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--color-success); }
+.server-state[data-state="error"]::before { background: var(--color-error); }
+.server-state[data-state="running"]::before { background: var(--color-accent-3); }
+
+.workbench {
+  width: min(100%, var(--page-max));
+  margin-inline: auto;
+  padding: var(--space-lg) var(--page-gutter) var(--space-3xl);
+}
+.bench-head { display: grid; gap: var(--space-xs); margin-block-end: var(--space-lg); }
+.bench-head h1 {
+  min-width: 0;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
+}
+.bench-head p { margin: 0; color: var(--color-muted); max-width: 68ch; }
+.bench-grid { display: grid; gap: var(--space-lg); align-items: start; }
+
+.setup,
+.preview-panel {
+  border: var(--rule-strong) solid var(--color-ink);
+  border-radius: var(--radius-card);
+  background: var(--color-paper-2);
+  box-shadow: 0 0.65rem 0 var(--color-ink);
+  overflow: clip;
+}
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  min-height: 3.25rem;
+  padding: var(--space-sm) var(--space-md);
+  border-block-end: var(--rule-strong) solid var(--color-ink);
+  background: var(--color-accent);
+}
+.panel-head h2 { margin: 0; font-size: var(--text-base); font-weight: 700; }
+.panel-code { font-family: var(--font-mono); font-size: var(--text-xs); white-space: nowrap; }
+.setup form { display: grid; gap: var(--space-md); padding: var(--space-md); }
+
+.file-input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; }
+.file-drop {
+  display: grid;
+  place-items: center;
+  gap: var(--space-xs);
+  min-height: 7.5rem;
+  padding: var(--space-lg);
+  border: var(--rule-strong) dashed var(--color-rule-2);
+  border-radius: var(--radius-input);
+  background: var(--color-paper);
+  text-align: center;
+  cursor: pointer;
+  transition: transform var(--dur-short) var(--ease-out), background-color var(--dur-short) var(--ease-out);
+}
+.file-drop strong { font-size: var(--text-lg); }
+.file-drop small { color: var(--color-muted); }
+.file-drop[data-state="filled"] { border-style: solid; background: var(--color-accent-2-soft); }
+.file-drop[data-state="error"] { border-color: var(--color-error); background: var(--color-error-soft); }
+.file-drop:focus-within { outline: 3px solid var(--color-focus); outline-offset: 3px; }
+
+.field-grid { display: grid; gap: var(--space-md); }
+.field { display: grid; gap: var(--space-xs); min-width: 0; }
+.field label, .field-label { font-size: var(--text-sm); font-weight: 600; }
+.field-help { min-height: 1lh; color: var(--color-muted); font-size: var(--text-xs); }
+select {
+  width: 100%;
+  min-height: 2.75rem;
+  padding-inline: var(--space-sm) 2rem;
+  border: var(--rule-hair) solid var(--color-rule-2);
+  border-radius: var(--radius-input);
+  outline: 2px solid transparent;
+  outline-offset: 1px;
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
+select:focus-visible { outline-color: var(--color-focus); }
+select:active { background: var(--color-paper-2); }
+select[aria-invalid="true"] { border-color: var(--color-error); background: var(--color-error-soft); }
+select[data-state="success"] { border-color: var(--color-success); }
+select[data-state="loading"] { cursor: progress; }
+select:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.output-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-sm);
+  align-items: start;
+  padding: var(--space-md);
+  border: var(--rule-hair) solid var(--color-rule-2);
+  border-radius: var(--radius-input);
+  background: var(--color-accent-3-soft);
+}
+.output-card input { width: 1.25rem; height: 1.25rem; margin: var(--space-2xs) 0 0; accent-color: var(--color-error); }
+.output-card strong, .output-card small { display: block; }
+.output-card small { margin-block-start: var(--space-2xs); color: var(--color-muted); }
+.switches { display: grid; gap: var(--space-xs); }
+.switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  min-height: 3rem;
+  padding-inline: var(--space-sm);
+  border: var(--rule-hair) solid var(--color-rule);
+  border-radius: var(--radius-input);
+  background: var(--color-paper);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.switch input { width: 1.25rem; height: 1.25rem; accent-color: var(--color-success); }
+
+.volume-group {
+  display: grid;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border: var(--rule-hair) solid var(--color-rule);
+  border-radius: var(--radius-input);
+  background: var(--color-paper);
+}
+.volume-group[hidden] { display: none; }
+.slider-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-sm);
+}
+.slider-row input[type=range] {
+  width: 100%;
+  height: 0.5rem;
+  accent-color: var(--color-accent-3);
+  cursor: pointer;
+}
+.slider-row output {
+  min-width: 3.5rem;
+  text-align: end;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-ink-2);
+}
+
+.btn {
+  --btn-face: var(--color-accent);
+  --btn-edge: var(--color-accent-deep);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  min-height: 3rem;
+  padding-inline: var(--space-lg);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--btn-face);
+  color: var(--color-accent-ink);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 4px 0 var(--btn-edge), 0 6px 12px -3px var(--color-rule);
+  transform: translateY(0);
+  transition: transform 140ms var(--ease-out), box-shadow 140ms var(--ease-out), background-color var(--dur-short) var(--ease-out);
+}
+.btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--btn-edge); transition-duration: 70ms; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: 0 4px 0 var(--btn-edge); }
+.btn[data-state="loading"]::before {
+  content: "";
+  width: 1rem;
+  height: 1rem;
+  border: var(--rule-strong) solid var(--color-accent-ink);
+  border-block-start-color: transparent;
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+.btn[data-state="success"] { --btn-face: var(--color-success-soft); --btn-edge: var(--color-success); }
+.btn[data-state="error"] { --btn-face: var(--color-error-soft); --btn-edge: var(--color-error); }
+
+.config-note {
+  margin: 0;
+  padding: var(--space-sm);
+  border-radius: var(--radius-input);
+  background: var(--color-accent-2-soft);
+  color: var(--color-ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.preview-panel { background: var(--color-paper); }
+.preview-panel .panel-head { background: var(--color-accent-2-soft); }
+.screen { padding: var(--space-md); }
+.screen video {
+  display: block;
+  width: 100%;
+  max-height: 62svh;
+  border: var(--rule-strong) solid var(--color-ink);
+  border-radius: var(--radius-input);
+  background: var(--color-video);
+  aspect-ratio: 16 / 9;
+}
+.empty-copy { margin: var(--space-sm) 0 0; color: var(--color-muted); font-size: var(--text-sm); }
+
+.queue-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin: 0 var(--space-md) var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border: var(--rule-hair) solid var(--color-rule-2);
+  border-radius: var(--radius-input);
+  background: var(--color-paper-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-ink-2);
+}
+.queue-summary:empty { display: none; }
+.queue-list { display: grid; gap: var(--space-md); padding: 0 var(--space-md) var(--space-md); }
+.queue-list:empty { display: none; }
+.queue-item {
+  display: grid;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border: var(--rule-hair) solid var(--color-rule-2);
+  border-radius: var(--radius-input);
+  background: var(--color-paper-2);
+}
+.queue-item[data-state="running"] { border-color: var(--color-accent-deep); background: var(--color-accent-2-soft); }
+.queue-item[data-state="done"] { border-color: var(--color-success); }
+.queue-item[data-state="error"] { border-color: var(--color-error); }
+.queue-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-sm);
+  align-items: start;
+}
+.queue-title { min-width: 0; }
+.q-name { display: block; font-weight: 700; overflow-wrap: anywhere; }
+.q-meta { display: block; color: var(--color-muted); font-family: var(--font-mono); font-size: var(--text-xs); }
+.queue-actions { display: flex; align-items: center; gap: var(--space-xs); }
+.status-chip {
+  padding: var(--space-2xs) var(--space-sm);
+  border: var(--rule-hair) solid var(--color-rule-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-paper);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+.status-chip[data-state="running"] { background: var(--color-accent); border-color: var(--color-accent-deep); }
+.status-chip[data-state="done"] { background: var(--color-success-soft); border-color: var(--color-success); }
+.status-chip[data-state="error"] { background: var(--color-error-soft); border-color: var(--color-error); }
+.cancel-btn {
+  width: 2rem;
+  height: 2rem;
+  border: var(--rule-hair) solid var(--color-rule-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-paper);
+  color: var(--color-ink-2);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  line-height: 1;
+}
+.cancel-btn:hover { border-color: var(--color-error); color: var(--color-error); }
+.cancel-btn[hidden] { display: none; }
+.queue-item .progress-track { margin: 0; }
+.queue-item .jobline { font-size: var(--text-xs); }
+
+.progress-track {
+  height: 0.75rem;
+  margin-block: var(--space-md) var(--space-sm);
+  border: var(--rule-hair) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  background: var(--color-paper-3);
+  overflow: clip;
+}
+.progress-bar { width: 100%; height: 100%; background: var(--color-accent-3); transform: scaleX(0); transform-origin: left center; transition: transform var(--dur-medium) linear; }
+.jobline { min-height: 1.5rem; margin: 0; color: var(--color-ink-2); font-family: var(--font-mono); font-size: var(--text-sm); }
+.error, .warning { min-height: 0; margin-block-start: var(--space-xs); padding: 0; color: var(--color-error); white-space: pre-wrap; }
+.error:not(:empty), .warning:not(:empty) { padding: var(--space-sm); border: var(--rule-hair) solid var(--color-error); border-radius: var(--radius-input); background: var(--color-error-soft); }
+
+.outputs { display: grid; gap: var(--space-sm); }
+.outputs:empty { display: none; }
+.download {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-sm);
+  align-items: center;
+  min-height: 3rem;
+  padding: var(--space-sm) var(--space-md);
+  border: var(--rule-hair) solid var(--color-rule-2);
+  border-radius: var(--radius-input);
+  background: var(--color-paper-2);
+  color: var(--color-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+.download::after { content: "↓"; font-family: var(--font-mono); }
+.download[data-primary="true"] { border: var(--rule-strong) solid var(--color-ink); background: var(--color-accent); }
+
+.foot-stmt {
+  display: grid;
+  gap: var(--space-lg);
+  padding: var(--space-2xl) var(--page-gutter) max(var(--space-xl), env(safe-area-inset-bottom));
+  border-block-start: var(--rule-strong) solid var(--color-ink);
+  background: var(--color-accent-2-soft);
+}
+.foot-stmt__line { max-width: 24ch; margin: 0; font-family: var(--font-display); font-size: var(--text-2xl); font-weight: 600; line-height: 1.1; letter-spacing: -0.025em; }
+.foot-stmt__meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-sm); padding-block-start: var(--space-sm); border-block-start: var(--rule-hair) solid var(--color-rule-2); font-family: var(--font-mono); font-size: var(--text-xs); }
+
+@media (hover: hover) and (pointer: fine) {
+  .file-drop:hover { transform: translateY(-2px); background: var(--color-paper-3); }
+  .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 0 var(--btn-edge), 0 12px 22px -4px var(--color-rule); }
+  .download:hover { background: var(--color-accent-2-soft); }
+  select:hover { background: var(--color-paper-2); }
+}
+@media (min-width: 40rem) {
+  .brand-suffix { display: inline; }
+  .field-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 64rem) {
+  .workbench { padding-block-start: var(--space-xl); }
+  .bench-head { grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.8fr); align-items: end; }
+  .bench-grid { grid-template-columns: minmax(20rem, 25rem) minmax(0, 1fr); }
+  .setup { position: sticky; top: var(--space-md); }
+}
+@media (pointer: coarse) { .btn, select, .download { min-height: 3rem; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+  .file-drop, .btn { transform: none !important; }
+}
+@keyframes spin { to { transform: rotate(1turn); } }
+@keyframes breathe { 50% { transform: scale(1.04); } }
+</style>
+<title>Vietnamese Video Dubber</title>
+</head>
+<body>
+<header class="nav-slab">
+  <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">AI VIDEO<span class="brand-suffix"> DUBBER</span></span></div>
+  <div class="server-state" id="serverStatus" data-state="ready" role="status">READY</div>
+</header>
+
+<main class="workbench">
+  <header class="bench-head">
+    <h1>Nhiều video. Một hàng đợi. Chạy lần lượt.</h1>
+    <p>Up nhiều video cùng lúc, mỗi video trở thành một job. Server xử lý lần lượt theo thứ tự upload: tách audio, Whisper transcribe, dịch Việt, lồng tiếng Edge-TTS và burn phụ đề.</p>
+  </header>
+
+  <div class="bench-grid">
+    <section class="setup" aria-labelledby="setupTitle">
+      <header class="panel-head"><h2 id="setupTitle">Thiết lập batch</h2><span class="panel-code">N INPUT → N MP4</span></header>
+      <form id="jobForm">
+        <div>
+          <input class="file-input" id="videoFile" name="file" type="file" accept="video/*,.mkv,.mov,.mp4,.webm,.avi,.m4v" multiple required aria-required="true">
+          <label class="file-drop" id="fileDrop" for="videoFile" tabindex="0">
+            <strong id="fileName">Chọn hoặc thả nhiều video</strong>
+            <small id="fileMeta">MP4 · MOV · MKV · WEBM · AVI · M4V · chạy lần lượt</small>
+          </label>
+        </div>
+
+        <div class="field-grid">
+          <div class="field">
+            <label for="whisperModel">Whisper model</label>
+            <select id="whisperModel" name="whisper_model">
+              <option value="small" selected>small (cân bằng)</option><option value="medium">medium (chậm, chính xác)</option><option value="base">base (nhanh)</option><option value="tiny">tiny (nhanh nhất)</option>
+            </select>
+            <span class="field-help">Lớn hơn thường chính xác hơn</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="translationProvider">Translation provider</label>
+          <select id="translationProvider" name="translation_provider">
+            <option value="google" selected>Google Translate (free)</option>
+            <option value="ollama">Ollama local</option>
+            <option value="envit5">EnViT5 (offline GPU)</option>
+          </select>
+          <span class="field-help" id="translationProviderHelp">Google Translate free, không cần API key</span>
+        </div>
+
+        <input type="hidden" id="targetLang" name="target_lang" value="vi">
+        <label class="output-card">
+          <input type="radio" name="export_mode" value="burn" checked>
+          <span><strong>Burn phụ đề Việt vào video</strong><small>Phụ đề luôn hiện, không cần bật subtitle trong player.</small></span>
+        </label>
+
+        <div class="switches">
+          <label class="switch"><span>Dịch sang tiếng Việt</span><input id="translateToggle" type="checkbox" checked></label>
+          <label class="switch"><span>Giữ audio gốc nhỏ + lồng tiếng Việt</span><input id="dubToggle" type="checkbox" checked></label>
+        </div>
+
+        <div id="volumeControls" class="volume-group">
+          <div class="field">
+            <label for="bgVolume">Am luong audio goc</label>
+            <div class="slider-row">
+              <input id="bgVolume" name="background_volume" type="range" min="0" max="100" value="15" step="1">
+              <output id="bgVolumeVal" for="bgVolume">15%</output>
+            </div>
+            <span class="field-help">0% = tat hoan toan, 15% = nhe, 100% = nhu goc</span>
+          </div>
+          <div class="field">
+            <label for="voiceVolume">Am luong giong Viet</label>
+            <div class="slider-row">
+              <input id="voiceVolume" name="voice_volume" type="range" min="50" max="300" value="100" step="5">
+              <output id="voiceVolumeVal" for="voiceVolume">100%</output>
+            </div>
+            <span class="field-help">100% = binh thuong, 200% = to hon</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="ttsProvider">Engine lồng tiếng</label>
+          <select id="ttsProvider" name="tts_provider">
+            <option value="edge" selected>Edge-TTS (online)</option>
+            <option value="vieneu">VieNeu-TTS (offline)</option>
+          </select>
+          <span class="field-help" id="ttsProviderHelp">Edge-TTS cần internet. VieNeu chạy offline, 23 giọng, clone giọng.</span>
+        </div>
+
+        <div class="field">
+          <label for="ttsVoice">Giọng đọc</label>
+          <select id="ttsVoice" name="tts_voice">
+            <option value="vi-VN-HoaiMyNeural" selected>Hoài My (Edge · Nữ · Truyền cảm)</option>
+            <option value="vi-VN-NamMinhNeural">Nam Minh (Edge · Nam · Trầm ấm)</option>
+            <option value="Minh Quân">Minh Quân (VieNeu · Nam · Bắc)</option>
+            <option value="Phạm Tuyên">Phạm Tuyên (VieNeu · Nam · Bắc)</option>
+            <option value="Thái Sơn">Thái Sơn (VieNeu · Nam · Nam)</option>
+            <option value="Trúc Ly">Trúc Ly (VieNeu · Nữ · Bắc)</option>
+            <option value="Mai Anh">Mai Anh (VieNeu · Nữ · Bắc)</option>
+            <option value="Quỳnh Anh">Quỳnh Anh (VieNeu · Nữ · Bắc)</option>
+            <option value="Thùy Dung">Thùy Dung (VieNeu · Nữ · Nam)</option>
+            <option value="Mỹ Duyên">Mỹ Duyên (VieNeu · Nữ · Nam)</option>
+          </select>
+          <span class="field-help" id="ttsVoiceHelp">Chọn engine trước, rồi chọn giọng tương ứng. VieNeu có 23 giọng đủ 3 miền.</span>
+        </div>
+
+        <button class="btn" id="startBtn" type="submit"><span id="startLabel">Thêm video vào hàng đợi</span></button>
+        <p class="config-note" id="configNote">Đang đọc cấu hình server…</p>
+      </form>
+    </section>
+
+    <section class="preview-panel" aria-labelledby="previewTitle">
+      <header class="panel-head"><h2 id="previewTitle">Preview & hàng đợi</h2><span class="panel-code">QUEUE <span id="queueCount">0</span></span></header>
+      <div class="screen">
+        <video id="videoPreview" controls preload="metadata"></video>
+        <p class="empty-copy" id="previewHint">Video đang xử lý xuất hiện ở đây; khi xong, preview chuyển sang bản burn-in.</p>
+      </div>
+
+      <p class="queue-summary" id="queueSummary" aria-live="polite"></p>
+      <div class="queue-list" id="queueList" aria-label="Hàng đợi job"></div>
+      <p class="jobline" id="jobLine" aria-live="polite" style="margin:0 var(--space-md) var(--space-md);">Chưa có job.</p>
+      <div class="error" id="errorBox" role="alert" style="margin-inline:var(--space-md);"></div>
+    </section>
+  </div>
+</main>
+
+<footer class="foot-stmt">
+  <p class="foot-stmt__line">Soft ở giao diện. Chính xác ở timeline.</p>
+  <div class="foot-stmt__meta"><span>EDGE-TTS · WHISPER · FFMPEG</span><span>LOCAL WORKBENCH · BATCH QUEUE</span></div>
+</footer>
+
+<script>
+const form = document.getElementById('jobForm');
+const fileInput = document.getElementById('videoFile');
+const fileDrop = document.getElementById('fileDrop');
+const fileName = document.getElementById('fileName');
+const fileMeta = document.getElementById('fileMeta');
+const videoPreview = document.getElementById('videoPreview');
+const previewHint = document.getElementById('previewHint');
+const startBtn = document.getElementById('startBtn');
+const startLabel = document.getElementById('startLabel');
+const serverStatus = document.getElementById('serverStatus');
+const queueSummary = document.getElementById('queueSummary');
+const queueList = document.getElementById('queueList');
+const queueCount = document.getElementById('queueCount');
+const jobLine = document.getElementById('jobLine');
+const errorBox = document.getElementById('errorBox');
+const translateToggle = document.getElementById('translateToggle');
+const dubToggle = document.getElementById('dubToggle');
+const configNote = document.getElementById('configNote');
+const translationProvider = document.getElementById('translationProvider');
+const ttsVoice = document.getElementById('ttsVoice');
+const volumeControls = document.getElementById('volumeControls');
+const bgVolume = document.getElementById('bgVolume');
+const bgVolumeVal = document.getElementById('bgVolumeVal');
+const voiceVolume = document.getElementById('voiceVolume');
+const voiceVolumeVal = document.getElementById('voiceVolumeVal');
+
+const rowCache = new Map();
+const downloadLabels = {
+  output_burned_video: 'Video · giọng Việt + phụ đề burn',
+  output_dubbed_video: 'Video · giọng Việt + soft sub',
+  output_video: 'Video · audio gốc + soft sub',
+  vi_srt: 'Vietnamese SRT', original_srt: 'Original SRT', audio: 'Extracted WAV', input: 'Input video'
+};
+const downloadOrder = ['output_burned_video', 'output_dubbed_video', 'output_video', 'vi_srt', 'original_srt', 'audio', 'input'];
+
+let pollTimer = null;
+let objectUrl = null;
+let uploading = false;
+let activePreviewJobId = null;
+let serverConfig = null;
+
+loadConfig();
+
+function humanSize(bytes) {
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
+  return `${value.toFixed(unit ? 1 : 0)} ${units[unit]}`;
+}
+
+function humanTime(seconds) {
+  if (seconds == null) return '—';
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  return s > 0 ? `${m}m ${s}s` : `${m}m`;
+}
+
+function resetDrop() {
+  if (objectUrl) URL.revokeObjectURL(objectUrl);
+  objectUrl = null;
+  videoPreview.removeAttribute('src');
+  fileName.textContent = 'Chọn hoặc thả nhiều video';
+  fileMeta.textContent = 'MP4 · MOV · MKV · WEBM · AVI · M4V · chạy lần lượt';
+  delete fileDrop.dataset.state;
+  previewHint.textContent = 'Video đang xử lý xuất hiện ở đây; khi xong, preview chuyển sang bản burn-in.';
+}
+
+function showSelectedFiles(files) {
+  const list = [...files];
+  if (!list.length) { resetDrop(); return; }
+  if (objectUrl) URL.revokeObjectURL(objectUrl);
+  objectUrl = URL.createObjectURL(list[0]);
+  videoPreview.src = objectUrl;
+  fileName.textContent = list.length === 1 ? list[0].name : `${list.length} video`;
+  const total = list.reduce((sum, file) => sum + file.size, 0);
+  fileMeta.textContent = `${list.length} file · ${humanSize(total)} · chạy lần lượt`;
+  fileDrop.dataset.state = 'filled';
+  previewHint.textContent = 'Preview video đầu tiên trong hàng đợi.';
+}
+
+fileInput.addEventListener('change', () => showSelectedFiles(fileInput.files));
+translationProvider.addEventListener('change', updateTranslationProviderUi);
+
+  const ttsProvider = document.getElementById('ttsProvider');
+  ttsProvider.addEventListener('change', updateTtsProviderUi);
+dubToggle.addEventListener('change', updateVolumeVisibility);
+bgVolume.addEventListener('input', () => { bgVolumeVal.textContent = `${bgVolume.value}%`; });
+voiceVolume.addEventListener('input', () => { voiceVolumeVal.textContent = `${voiceVolume.value}%`; });
+updateVolumeVisibility();
+fileDrop.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); fileInput.click(); }
+});
+['dragenter', 'dragover'].forEach(type => fileDrop.addEventListener(type, event => { event.preventDefault(); fileDrop.dataset.state = 'filled'; }));
+fileDrop.addEventListener('dragleave', () => { if (!fileInput.files.length) delete fileDrop.dataset.state; });
+fileDrop.addEventListener('drop', event => {
+  event.preventDefault();
+  const files = [...event.dataTransfer.files].filter(f => f.type.startsWith('video/') || /\.(mp4|mov|mkv|webm|avi|m4v)$/i.test(f.name));
+  if (!files.length) return;
+  const transfer = new DataTransfer();
+  files.forEach(file => transfer.items.add(file));
+  fileInput.files = transfer.files;
+  showSelectedFiles(files);
+});
+
+function updateVolumeVisibility() {
+  volumeControls.hidden = !dubToggle.checked;
+}
+
+form.addEventListener('submit', async event => {
+  event.preventDefault();
+  const files = [...fileInput.files];
+  if (!files.length) {
+    fileDrop.dataset.state = 'error';
+    fileMeta.textContent = 'Chưa có video. Chọn ít nhất một file để tiếp tục.';
+    return;
+  }
+  if (uploading) return;
+  uploading = true;
+  errorBox.textContent = '';
+  startBtn.disabled = true;
+  startBtn.dataset.state = 'loading';
+  startLabel.textContent = 'Đang upload…';
+
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      jobLine.textContent = `Đang upload ${i + 1}/${files.length}: ${file.name}`;
+      const fd = new FormData();
+      new FormData(form).forEach((value, key) => { if (key !== 'file') fd.append(key, value); });
+      fd.append('file', file);
+      fd.set('translate', translateToggle.checked ? 'true' : 'false');
+      fd.set('dub', dubToggle.checked ? 'true' : 'false');
+      fd.set('tts_voice', ttsVoice.value);
+      fd.set('background_volume', String(Number(bgVolume.value) / 100));
+      fd.set('voice_volume', String(Number(voiceVolume.value) / 100));
+
+      const response = await fetch('/api/jobs', { method: 'POST', body: fd });
+      if (!response.ok) throw new Error(`Upload thất bại (${file.name}): ${await response.text()}`);
+      await response.json();
+    }
+    fileInput.value = '';
+    resetDrop();
+  } catch (error) {
+    finishWithError(error);
+  } finally {
+    uploading = false;
+    startBtn.disabled = false;
+    startBtn.dataset.state = 'default';
+    startLabel.textContent = 'Thêm video vào hàng đợi';
+    if (!pollTimer) pollTimer = setInterval(pollQueue, 1500);
+    pollQueue();
+  }
+});
+
+async function pollQueue() {
+  try {
+    const response = await fetch('/api/queue');
+    if (!response.ok) throw new Error(await response.text());
+    const data = await response.json();
+    renderQueue(data.jobs || []);
+  } catch (error) {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
+    finishWithError(error);
+  }
+}
+
+function createRow(jobId) {
+  const article = document.createElement('article');
+  article.className = 'queue-item';
+  article.dataset.jobId = jobId;
+
+  const head = document.createElement('header');
+  head.className = 'queue-head';
+  const title = document.createElement('div');
+  title.className = 'queue-title';
+  const name = document.createElement('strong');
+  name.className = 'q-name';
+  const meta = document.createElement('span');
+  meta.className = 'q-meta';
+  title.append(name, meta);
+  const actions = document.createElement('div');
+  actions.className = 'queue-actions';
+  const chip = document.createElement('span');
+  chip.className = 'status-chip';
+  const cancel = document.createElement('button');
+  cancel.className = 'cancel-btn';
+  cancel.type = 'button';
+  cancel.textContent = '✕';
+  cancel.title = 'Xoá khỏi hàng đợi';
+  cancel.addEventListener('click', async () => {
+    cancel.disabled = true;
+    try {
+      await fetch(`/api/jobs/${jobId}`, { method: 'DELETE' });
+      pollQueue();
+    } catch (err) {
+      finishWithError(err);
+    }
+  });
+  actions.append(chip, cancel);
+  head.append(title, actions);
+
+  const progressTrack = document.createElement('div');
+  progressTrack.className = 'progress-track';
+  progressTrack.setAttribute('role', 'progressbar');
+  progressTrack.setAttribute('aria-valuemin', '0');
+  progressTrack.setAttribute('aria-valuemax', '100');
+  progressTrack.setAttribute('aria-valuenow', '0');
+  const progressBar = document.createElement('div');
+  progressBar.className = 'progress-bar';
+  progressTrack.appendChild(progressBar);
+
+  const line = document.createElement('p');
+  line.className = 'jobline';
+  const error = document.createElement('div');
+  error.className = 'error';
+  error.setAttribute('role', 'alert');
+  const warn = document.createElement('div');
+  warn.className = 'warning';
+  warn.setAttribute('role', 'alert');
+  const outputs = document.createElement('div');
+  outputs.className = 'outputs';
+
+  article.append(head, progressTrack, line, error, warn, outputs);
+  article._ui = { name, meta, chip, cancel, progressBar, progressTrack, line, error, warn, outputs };
+  return article;
+}
+
+function updateRow(article, job) {
+  const ui = article._ui;
+  const name = job.options?.original_stem || job.id;
+  ui.name.textContent = name;
+  ui.meta.textContent = `${job.id} · ${humanTime(job.total_elapsed)} · ${job.step}`;
+
+  const state = job.status === 'running' ? 'running' : job.status === 'done' ? 'done' : job.status === 'error' ? 'error' : 'queued';
+  article.dataset.state = state;
+  ui.chip.dataset.state = state;
+  if (state === 'running') ui.chip.textContent = `RUNNING · ${job.progress}%`;
+  else if (state === 'queued') ui.chip.textContent = `CHỜ · #${job.queue_position ?? '?'}`;
+  else if (state === 'done') ui.chip.textContent = `DONE · ${humanTime(job.total_elapsed)}`;
+  else ui.chip.textContent = 'ERROR';
+
+  ui.cancel.hidden = state === 'running';
+  ui.cancel.disabled = false;
+
+  const progress = Math.max(0, Math.min(100, job.progress || 0));
+  ui.progressBar.style.transform = `scaleX(${progress / 100})`;
+  ui.progressTrack.setAttribute('aria-valuenow', String(progress));
+  ui.line.textContent = `${job.step} · ${progress}%`;
+
+  ui.error.textContent = job.error || '';
+  ui.warn.textContent = (job.translation_warnings || []).map(w => `Cảnh báo: ${w}`).join('\n');
+
+  ui.outputs.innerHTML = '';
+  const entries = Object.entries(job.downloads || {}).sort(([a], [b]) => downloadOrder.indexOf(a) - downloadOrder.indexOf(b));
+  entries.forEach(([kind, url]) => {
+    const link = document.createElement('a');
+    link.className = 'download';
+    link.href = url;
+    link.textContent = downloadLabels[kind] || kind;
+    if (kind === 'output_burned_video') link.dataset.primary = 'true';
+    ui.outputs.appendChild(link);
+  });
+}
+
+function renderQueue(jobs) {
+  const seen = new Set();
+  jobs.forEach(job => {
+    seen.add(job.id);
+    let article = rowCache.get(job.id);
+    if (!article) {
+      article = createRow(job.id);
+      rowCache.set(job.id, article);
+    }
+    updateRow(article, job);
+    queueList.appendChild(article);
+  });
+  rowCache.forEach((article, jobId) => {
+    if (!seen.has(jobId)) {
+      article.remove();
+      rowCache.delete(jobId);
+    }
+  });
+
+  queueCount.textContent = String(jobs.length);
+
+  const running = jobs.find(job => job.status === 'running');
+  const waiting = jobs.filter(job => job.status === 'queued').length;
+  const finished = jobs.filter(job => job.status === 'done' || job.status === 'error');
+  if (running) {
+    const name = running.options?.original_stem || running.id;
+    jobLine.textContent = `Đang chạy: ${name} · ${running.step} · ${running.progress}%`;
+    queueSummary.textContent = `RUNNING · ${waiting} chờ · ${finished.length} xong`;
+    serverStatus.textContent = 'RUNNING';
+    serverStatus.dataset.state = 'running';
+  } else if (jobs.length) {
+    jobLine.textContent = `Đã xong ${finished.length} video. ${waiting} video đang chờ.`;
+    queueSummary.textContent = `IDLE · ${waiting} chờ · ${finished.length} xong`;
+    serverStatus.textContent = 'QUEUE';
+    serverStatus.dataset.state = 'ready';
+  } else {
+    jobLine.textContent = 'Hàng đợi trống.';
+    queueSummary.textContent = '';
+    serverStatus.textContent = 'READY';
+    serverStatus.dataset.state = 'ready';
+  }
+
+  updatePreview(jobs);
+}
+
+function updatePreview(jobs) {
+  const running = jobs.find(job => job.status === 'running');
+  if (running) {
+    if (activePreviewJobId !== running.id) {
+      activePreviewJobId = running.id;
+      const input = running.downloads?.input;
+      if (input) {
+        videoPreview.src = input;
+        previewHint.textContent = `Đang xử lý: ${running.options?.original_stem || running.id}`;
+      }
+    }
+    return;
+  }
+  if (activePreviewJobId) {
+    const finished = jobs.find(job => job.id === activePreviewJobId);
+    activePreviewJobId = null;
+    if (finished) {
+      const url = finished.downloads?.output_burned_video || finished.downloads?.output_dubbed_video || finished.downloads?.output_video;
+      if (url) {
+        videoPreview.src = url;
+        previewHint.textContent = 'Preview output cuối: giọng Việt và phụ đề đã burn vào hình.';
+      }
+    }
+  }
+}
+
+function finishWithError(error) {
+  errorBox.textContent = error.message;
+  serverStatus.textContent = 'ERROR';
+  serverStatus.dataset.state = 'error';
+}
+
+async function loadConfig() {
+  try {
+    const response = await fetch('/api/config');
+    if (!response.ok) throw new Error('Không đọc được config');
+    serverConfig = await response.json();
+    updateTranslationProviderUi();
+    updateTtsProviderUi();
+  } catch (_error) {
+    configNote.textContent = 'Server config chưa sẵn sàng.';
+    serverStatus.textContent = 'OFFLINE';
+    serverStatus.dataset.state = 'error';
+  }
+}
+
+function updateTranslationProviderUi() {
+  if (!serverConfig) return;
+  if (translationProvider.value === 'google') {
+    translationProviderHelp.textContent = 'Google Translate free, không cần API key';
+    configNote.textContent = 'Google Translate online · không cần cài đặt · nhanh, chính xác';
+    serverStatus.textContent = 'GOOGLE TRANSLATE';
+    serverStatus.dataset.state = 'ready';
+    return;
+  }
+  if (translationProvider.value === 'ollama') {
+    const ready = serverConfig.ollama_available && serverConfig.ollama_model_available;
+    translationProviderHelp.textContent = ready
+      ? `Local model sẵn sàng: ${serverConfig.ollama_model}`
+      : `Cần chạy: ollama pull ${serverConfig.ollama_model}`;
+    configNote.textContent = ready
+      ? `Ollama local: ${serverConfig.ollama_model} · không cần API key · output: burned MP4`
+      : `Ollama chưa có model ${serverConfig.ollama_model}. Tải model rồi refresh trang.`;
+    serverStatus.textContent = ready ? 'OLLAMA READY' : 'OLLAMA SETUP';
+    serverStatus.dataset.state = ready ? 'ready' : 'error';
+    return;
+  }
+  if (translationProvider.value === 'envit5') {
+    translationProviderHelp.textContent = 'EnViT5 offline · tải model lần đầu từ HuggingFace · GPU nếu có';
+    configNote.textContent = 'EnViT5 local (Transformers) · chạy GPU · offline sau khi tải model';
+    serverStatus.textContent = 'ENVIT5 OFFLINE';
+    serverStatus.dataset.state = 'ready';
+    return;
+  }
+}
+
+function updateTtsProviderUi() {
+  if (!serverConfig) return;
+  const ttsProviderHelp = document.getElementById('ttsProviderHelp');
+  const ttsVoiceHelp = document.getElementById('ttsVoiceHelp');
+  const ttsVoice = document.getElementById('ttsVoice');
+  const provider = document.getElementById('ttsProvider').value;
+  if (provider === 'edge') {
+    ttsProviderHelp.textContent = 'Edge-TTS online · Microsoft Neural · cần internet';
+    ttsVoiceHelp.textContent = 'Chọn 1 trong 2 giọng Edge-TTS';
+    ttsVoice.value = 'vi-VN-HoaiMyNeural';
+    ttsVoice.innerHTML = `
+      <option value="vi-VN-HoaiMyNeural" selected>Hoài My (Edge · Nữ · Truyền cảm)</option>
+      <option value="vi-VN-NamMinhNeural">Nam Minh (Edge · Nam · Trầm ấm)</option>
+    `;
+    configNote.textContent = 'Edge-TTS · Microsoft Neural · online · 2 giọng';
+    serverStatus.textContent = 'EDGE TTS';
+    serverStatus.dataset.state = 'ready';
+    return;
+  }
+  if (provider === 'vieneu') {
+    ttsProviderHelp.textContent = 'VieNeu-TTS offline · 23 giọng · 3 miền · clone giọng';
+    ttsVoiceHelp.textContent = '23 giọng VieNeu (Bắc/Trung/Nam) · voice cloning · offline';
+    ttsVoice.value = 'Minh Quân';
+    ttsVoice.innerHTML = `
+       <option value="Minh Đức" selected>Minh Đức (VieNeu · Nam · Bắc · Tin tức)</option>
+       <option value="Phạm Tuyên">Phạm Tuyên (VieNeu · Nam · Bắc · Tự nhiên)</option>
+       <option value="Thái Sơn">Thái Sơn (VieNeu · Nam · Nam · Kể chuyện)</option>
+       <option value="Xuân Vĩnh">Xuân Vĩnh (VieNeu · Nam · Bắc · Tự nhiên)</option>
+       <option value="Thanh Bình">Thanh Bình (VieNeu · Nam · Bắc · Kể chuyện)</option>
+       <option value="Trúc Ly">Trúc Ly (VieNeu · Nữ · Bắc · Tự nhiên)</option>
+       <option value="Ngọc Linh">Ngọc Linh (VieNeu · Nữ · Bắc · Kể chuyện)</option>
+       <option value="Đoan Trang">Đoan Trang (VieNeu · Nữ · Bắc · Tự nhiên)</option>
+       <option value="Mai Anh">Mai Anh (VieNeu · Nữ · Bắc · Tin tức)</option>
+       <option value="Thục Đoan">Thục Đoan (VieNeu · Nữ · Nam · Kể chuyện)</option>
+       <option value="Minh Triết">Minh Triết (VieNeu · Nam · Nam · Tin tức)</option>
+       <option value="Thùy Dung">Thùy Dung (VieNeu · Nữ · Nam · Tin tức)</option>
+       <option value="Quang Sơn">Quang Sơn (VieNeu · Nam · Trung · Tự nhiên)</option>
+       <option value="Ngọc Trân">Ngọc Trân (VieNeu · Nữ · Trung · Tự nhiên)</option>
+       <option value="Mỹ Duyên">Mỹ Duyên (VieNeu · Nữ · Nam · Đọc truyện)</option>
+       <option value="Quỳnh Anh">Quỳnh Anh (VieNeu · Nữ · Bắc · Đọc truyện)</option>
+       <option value="Đức Trí">Đức Trí (VieNeu · Nam · Nam · Đọc truyện)</option>
+       <option value="Kim Thanh">Kim Thanh (VieNeu · Nữ · Nam · Đọc truyện)</option>
+       <option value="Ngọc Huyền">Ngọc Huyền (VieNeu · Nữ · Bắc · Giọng đọc)</option>
+       <option value="Adam">Adam (VieNeu · Nam · Nam · Giọng đọc)</option>
+       <option value="Mạnh Dũng">Mạnh Dũng (VieNeu · Nam · Bắc · Tự nhiên)</option>
+       <option value="Minh Quân">Minh Quân (VieNeu · Nam · Bắc · Tự nhiên)</option>
+       <option value="Anh Khôi">Anh Khôi (VieNeu · Nam · Bắc · Kể chuyện)</option>
+    `;
+    configNote.textContent = 'VieNeu-TTS · offline · 23 giọng · 48 kHz · voice cloning';
+    serverStatus.textContent = 'VIENEU OFFLINE';
+    serverStatus.dataset.state = 'ready';
+    return;
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+[project]
+name = "vi-video-dubber"
+version = "1.0.0"
+description = "AI Video Subtitle and Vietnamese Voiceover Localizer"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "python-multipart>=0.0.9",
+    "numpy>=1.26.0",
+    "soundfile>=0.12.1",
+    "faster-whisper>=1.0.0",
+    "deep-translator>=1.11.4",
+    "edge-tts>=6.1.19",
+    "transformers>=4.40.0,<5",
+     "torch>=2.0.0",
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["pipeline*"]
