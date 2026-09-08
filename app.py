@@ -219,10 +219,10 @@ async def resolve_url(video_url: str = Form("")):
     if not url:
         raise HTTPException(status_code=400, detail="No URL provided.")
     try:
-        urls = resolve_video_urls(url)
+        items = resolve_video_urls(url)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Failed to resolve URL: {exc}")
-    return {"urls": urls}
+    return {"videos": [{"url": u, "title": t} for u, t in items]}
 
 
 @app.post("/api/jobs")
@@ -257,12 +257,9 @@ async def create_job(
     job_dir.mkdir(parents=True, exist_ok=True)
 
     video_url = video_url.strip()
+    source_title = None
     if video_url:
-        try:
-            input_path, source_title = download_video(video_url, job_dir)
-        except Exception as exc:
-            shutil.rmtree(job_dir, ignore_errors=True)
-            raise HTTPException(status_code=400, detail=f"Failed to download video: {exc}")
+        input_path = job_dir / "input.mp4"
     else:
         if file is None:
             raise HTTPException(status_code=400, detail="Provide a video file or a YouTube URL.")
@@ -301,6 +298,7 @@ async def create_job(
             "tts_provider": tts_provider,
             "background_volume": str(background_volume),
             "voice_volume": str(voice_volume),
+            "video_url": video_url,
             "original_stem": source_title,
         },
     )
@@ -384,6 +382,15 @@ def _run_job(job_id: str) -> None:
         opts = dict(job.options)
 
     job_dir = input_path.parent
+    video_url = opts.get("video_url", "")
+    if video_url:
+        _set_step(job_id, "Downloading video from YouTube", 10)
+        with JOBS_LOCK:
+            JOBS[job_id].status = "running"
+        input_path, source_title = download_video(video_url, job_dir)
+        _add_file(job_id, "input", input_path)
+        _set_job(job_id, options={**opts, "original_stem": source_title})
+
     audio_path = job_dir / "audio.wav"
     original_srt = job_dir / "original.srt"
     vi_srt = job_dir / "vi.srt"

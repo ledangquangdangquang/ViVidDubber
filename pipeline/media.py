@@ -10,8 +10,8 @@ class MediaToolError(RuntimeError):
     pass
 
 
-def resolve_video_urls(url: str) -> list[str]:
-    """Expand a YouTube link into a list of individual video URLs (single video → [url])."""
+def resolve_video_urls(url: str) -> list[tuple[str, str]]:
+    """Expand a YouTube link into a list of (url, title) for each video (single video → [(url, title)])."""
     import yt_dlp
 
     ydl_opts = {
@@ -23,14 +23,14 @@ def resolve_video_urls(url: str) -> list[str]:
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
     if info.get("_type") == "playlist":
-        urls = []
+        items = []
         for entry in info.get("entries") or []:
             if entry and entry.get("url"):
-                urls.append(entry["url"])
-        if not urls:
-            urls = [url]
-        return urls
-    return [url]
+                items.append((entry["url"], entry.get("title") or "Untitled"))
+        if not items:
+            items = [(url, info.get("title") or "Untitled")]
+        return items
+    return [(url, info.get("title") or "Untitled")]
 
 
 def download_video(url: str, job_dir: Path, preferred_height: int = 720) -> tuple[Path, str]:

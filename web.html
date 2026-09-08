@@ -132,6 +132,11 @@ button, a, select, .file-drop { -webkit-tap-highlight-color: transparent; }
 
 .field-grid { display: grid; gap: var(--space-md); }
 .radio-row { display: grid; gap: var(--space-sm); grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.url-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-sm); align-items: center; }
+.video-list { display: grid; gap: var(--space-xs); margin-block-start: var(--space-sm); max-height: 16rem; overflow-y: auto; border: var(--rule-hair) solid var(--color-rule-2); border-radius: var(--radius-input); padding: var(--space-sm); background: var(--color-accent-3-soft); }
+.video-item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-sm); align-items: start; }
+.video-item input { width: 1.1rem; height: 1.1rem; margin-block-start: var(--space-2xs); accent-color: var(--color-error); }
+.video-item span { font-size: var(--text-sm); overflow-wrap: anywhere; }
 .field { display: grid; gap: var(--space-xs); min-width: 0; }
 .field label, .field-label { font-size: var(--text-sm); font-weight: 600; }
 .field-help { min-height: 1lh; color: var(--color-muted); font-size: var(--text-xs); }
@@ -234,6 +239,7 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
 }
 .btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--btn-edge); transition-duration: 70ms; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: 0 4px 0 var(--btn-edge); }
+.btn-secondary { --btn-face: var(--color-paper-3); --btn-edge: var(--color-rule-2); color: var(--color-ink); min-height: 2.25rem; padding-inline: var(--space-md); }
 .btn[data-state="loading"]::before {
   content: "";
   width: 1rem;
@@ -436,8 +442,12 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
         </div>
         <div id="urlSource" class="field" hidden>
           <label for="videoUrl">Link YouTube</label>
-          <input type="url" id="videoUrl" name="video_url" placeholder="https://www.youtube.com/watch?v=… hoặc playlist">
-          <span class="field-help">Mỗi link trở thành 1 job. Link playlist → mỗi video 1 job riêng (download tuần tự). Ưu tiên 720p.</span>
+          <div class="url-row">
+            <input type="url" id="videoUrl" name="video_url" placeholder="https://www.youtube.com/watch?v=… hoặc playlist">
+            <button type="button" id="resolveBtn" class="btn btn-secondary">Phân tích</button>
+          </div>
+          <span class="field-help">Dán link → bấm "Phân tích" để liệt kê video. Chọn video bạn muốn rồi thêm vào hàng đợi.</span>
+          <div id="videoList" class="video-list" hidden></div>
         </div>
 
         <div class="field-grid">
@@ -569,6 +579,8 @@ const fileMeta = document.getElementById('fileMeta');
 const fileSource = document.getElementById('fileSource');
 const urlSource = document.getElementById('urlSource');
 const videoUrl = document.getElementById('videoUrl');
+const resolveBtn = document.getElementById('resolveBtn');
+const videoList = document.getElementById('videoList');
 const videoPreview = document.getElementById('videoPreview');
 const previewHint = document.getElementById('previewHint');
 const startBtn = document.getElementById('startBtn');
@@ -604,6 +616,7 @@ let objectUrl = null;
 let uploading = false;
 let activePreviewJobId = null;
 let serverConfig = null;
+let resolvedVideos = [];
 
 loadConfig();
 
@@ -656,9 +669,61 @@ function updateSourceUi() {
   fileSource.hidden = url;
   urlSource.hidden = !url;
   fileInput.required = !url;
+  startBtn.disabled = false;
 }
 sourceRadios.forEach(r => r.addEventListener('change', updateSourceUi));
 updateSourceUi();
+
+resolveBtn.addEventListener('click', async () => {
+  const value = videoUrl.value.trim();
+  if (!value) { errorBox.textContent = 'Chưa có link. Dán link YouTube vào ô trên.'; return; }
+  errorBox.textContent = '';
+  resolveBtn.disabled = true;
+  const original = resolveBtn.textContent;
+  resolveBtn.textContent = 'Đang phân tích…';
+  try {
+    const fd = new FormData();
+    fd.set('video_url', value);
+    const response = await fetch('/api/resolve', { method: 'POST', body: fd });
+    if (!response.ok) throw new Error(await response.text());
+    const data = await response.json();
+    resolvedVideos = data.videos || [];
+    renderVideoList();
+  } catch (error) {
+    errorBox.textContent = `Phân tích link thất bại: ${error.message}`;
+  } finally {
+    resolveBtn.disabled = false;
+    resolveBtn.textContent = original;
+  }
+});
+
+function renderVideoList() {
+  if (!resolvedVideos.length) { videoList.hidden = true; return; }
+  videoList.innerHTML = '';
+  resolvedVideos.forEach((video, i) => {
+    const item = document.createElement('label');
+    item.className = 'video-item';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = true;
+    cb.dataset.index = i;
+    cb.addEventListener('change', updateStartButton);
+    const title = document.createElement('span');
+    title.textContent = `${i + 1}. ${video.title}`;
+    item.append(cb, title);
+    videoList.append(item);
+  });
+  videoList.hidden = false;
+  updateStartButton();
+}
+
+function selectedVideoUrls() {
+  return [...videoList.querySelectorAll('input[type="checkbox"]')]
+    .filter(cb => cb.checked)
+    .map(cb => resolvedVideos[Number(cb.dataset.index)].url);
+}
+
+function updateStartButton() { startBtn.disabled = !selectedVideoUrls().length; }
 
 const whisperDevice = document.getElementById('whisperDevice');
 const whisperComputeType = document.getElementById('whisperComputeType');
@@ -714,14 +779,11 @@ form.addEventListener('submit', async event => {
 
   try {
     if (url) {
-      const value = videoUrl.value.trim();
-      if (!value) { throw new Error('Chưa có link YouTube. Dán link để tiếp tục.'); }
-      const resolveFd = new FormData();
-      resolveFd.set('video_url', value);
-      jobLine.textContent = `Đang phân tích link…`;
-      const resolveRes = await fetch('/api/resolve', { method: 'POST', body: resolveFd });
-      if (!resolveRes.ok) throw new Error(`Phân tích link thất bại: ${await resolveRes.text()}`);
-      const { urls } = await resolveRes.json();
+      const urls = selectedVideoUrls();
+      if (!urls.length) {
+        if (!resolvedVideos.length) throw new Error('Chưa phân tích link. Bấm "Phân tích" rồi chọn video.');
+        throw new Error('Chưa chọn video nào.');
+      }
       for (let i = 0; i < urls.length; i++) {
         const fd = makeFd();
         fd.set('video_url', urls[i]);
@@ -731,6 +793,8 @@ form.addEventListener('submit', async event => {
         await response.json();
       }
       videoUrl.value = '';
+      resolvedVideos = [];
+      renderVideoList();
     } else {
       const files = [...fileInput.files];
       if (!files.length) {
