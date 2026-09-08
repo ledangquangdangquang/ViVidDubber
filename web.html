@@ -1045,7 +1045,7 @@ function updateTranslationProviderUi() {
    }
    if (translationProvider.value === 'huggingface') {
 translationProviderHelp.textContent = 'Hy-MT2-1.8B offline · tải model từ HuggingFace · GPU nếu có';
-      configNote.textContent = 'HuggingFace direct · Transformers · tải model ~3.5GB · offline sau lần đầu';
+      configNote.textContent = 'HuggingFace direct · Transformers · 4-bit giảm VRAM (~1.2GB) · offline sau lần đầu';
      serverStatus.textContent = 'HF MODEL';
      serverStatus.dataset.state = 'ready';
      return;

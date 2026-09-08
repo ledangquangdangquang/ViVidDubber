@@ -11,7 +11,7 @@ video -> audio -> original subtitles (Whisper) -> translate to Vietnamese -> voi
 ## Features
 
 - **Speech-to-Text**: Faster-Whisper transcription, runs offline for free.
-- **Translation**: 3 options — Google Translate (free), HuggingFace Hy-MT2-1.8B (direct, can load GGUF via env), or EnViT5 offline (Transformers).
+- **Translation**: 3 options — Google Translate (free), HuggingFace Hy-MT2-1.8B (direct, 4-bit quantized for low VRAM), or EnViT5 offline (Transformers).
 - **AI Voice-over (TTS)**: Edge-TTS (online, Microsoft Neural) or VieNeu-TTS (offline, 23 Vietnamese voices).
 - **Video processing**: Automatic timeline alignment (atempo), burn subtitles or mux soft subs with FFmpeg.
 - **No paid APIs, no heavy Supertonic ONNX.**
@@ -76,7 +76,7 @@ No setup — just internet. The fastest way to get started.
 
 ### 2. HuggingFace Hy-MT2-1.8B — direct
 
-Runs `tencent/Hy-MT2-1.8B` directly with Transformers (Transformers can also load a GGUF repo like `tencent/Hy-MT2-1.8B-GGUF` for lower VRAM via `HF_TRANSLATE_REPO`). Downloads the model automatically (~3.5 GB) on first use, then runs fully offline. Previously this model required installing a separate Ollama server; that dependency is removed now — just pick "HuggingFace Hy-MT2-1.8B" in the UI. The model downloads on first run:
+Runs `tencent/Hy-MT2-1.8B` directly with Transformers. By default it loads **4-bit quantized** (bitsandbytes), cutting VRAM from ~3.4 GB to ~1.2 GB with no noticeable quality loss. Downloads the model automatically (~3.5 GB) on first use, then runs fully offline. Previously this model required installing a separate Ollama server; that dependency is removed now — just pick "HuggingFace Hy-MT2-1.8B" in the UI. The model downloads on first run:
 
 ```bash
 # Just pick "HuggingFace Hy-MT2-1.8B" in the UI; the model downloads on first run
@@ -89,6 +89,7 @@ Environment variables (optional):
 | `HF_TRANSLATE_REPO` | `tencent/Hy-MT2-1.8B` | HuggingFace model repo |
 | `HF_TRANSLATE_BATCH_SIZE` | `20` | Lines translated per call |
 | `HF_TRANSLATE_DEVICE` | `auto` | `cpu` or `cuda` (falls back to GPU if available) |
+| `HF_TRANSLATE_QUANT` | `4bit` | `4bit` (bitsandbytes, low VRAM) or `none` (FP16) |
 
 > Note: a CUDA GPU makes loading/warming faster; CPU works but is slower (1.8B is a small LLM, fits 4 GB VRAM).
 

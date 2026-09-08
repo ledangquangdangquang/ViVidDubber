@@ -248,6 +248,7 @@ class HuggingFaceTranslator(_BatchTranslator):
         self.repo = model or os.environ.get("HF_TRANSLATE_REPO", self._HF_REPO)
         self.batch_size = int(os.environ.get("HF_TRANSLATE_BATCH_SIZE", "20"))
         self.device = device or os.environ.get("HF_TRANSLATE_DEVICE", "")
+        self.quant = os.environ.get("HF_TRANSLATE_QUANT", "4bit")
         self.warnings: list[str] = []
 
     def _lazy_load(self):
@@ -263,14 +264,25 @@ class HuggingFaceTranslator(_BatchTranslator):
                 os.environ.setdefault("CC", "/usr/bin/gcc")
                 import torch
                 self._tokenizer = AutoTokenizer.from_pretrained(self.repo)
-                self._model = AutoModelForCausalLM.from_pretrained(
-                    self.repo, dtype=torch.float16
-                )
+                load_kwargs = {"dtype": torch.float16}
+                if self.quant == "4bit" and torch.cuda.is_available():
+                    try:
+                        from transformers import BitsAndBytesConfig
+                        load_kwargs = {
+                            "quantization_config": BitsAndBytesConfig(
+                                load_in_4bit=True,
+                                bnb_4bit_compute_dtype=torch.float16,
+                                bnb_4bit_use_double_quant=True,
+                                bnb_4bit_quant_type="nf4",
+                            ),
+                        }
+                    except ImportError:
+                        self.warnings.append(
+                            "bitsandbytes not installed; falling back to FP16 (add with `uv add bitsandbytes`)."
+                        )
+                self._model = AutoModelForCausalLM.from_pretrained(self.repo, **load_kwargs)
                 device = self.device or ("cuda" if torch.cuda.is_available() else "cpu")
-                if device != "cpu":
-                    self._model = self._model.to("cuda")
-                else:
-                    self._model = self._model.to("cpu")
+                self._model = self._model.to("cuda" if device != "cpu" else "cpu")
         return self._model, self._tokenizer
 
     def _translate_texts(self, texts: list[str], source_lang: str, target_lang: str) -> list[str]:

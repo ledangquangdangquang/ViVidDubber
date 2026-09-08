@@ -9,7 +9,7 @@ video -> audio -> phụ đề gốc (Whisper) -> dịch sang Việt -> lồng ti
 ## Tính năng
 
 - **Speech-to-Text**: Nhận diện giọng nói bằng Faster-Whisper (chạy offline, không tốn phí).
-- **Dịch thuật**: 3 lựa chọn — Google Translate (miễn phí), HuggingFace Hy-MT2-1.8B (trực tiếp, có thể load GGUF qua env), hoặc EnViT5 offline (Transformers).
+- **Dịch thuật**: 3 lựa chọn — Google Translate (miễn phí), HuggingFace Hy-MT2-1.8B (trực tiếp, 4-bit giảm VRAM), hoặc EnViT5 offline (Transformers).
 - **Thuyết minh AI (TTS)**: Edge-TTS (online, Microsoft Neural) hoặc VieNeu-TTS (offline, 23 giọng Việt).
 - **Xử lý Video**: Tự động khớp timeline âm thanh (atempo), burn phụ đề hoặc mux soft sub bằng FFmpeg.
 - **Không phụ thuộc API trả phí hay Supertonic ONNX cồng kềnh.**
@@ -74,7 +74,7 @@ Không cần cài đặt gì — chỉ cần internet. Đây là lựa chọn nh
 
 ### 2. HuggingFace Hy-MT2-1.8B — trực tiếp
 
-Chạy model dịch Anh-Việt `tencent/Hy-MT2-1.8B` trực tiếp bằng Transformers (có thể load bản GGUF `tencent/Hy-MT2-1.8B-GGUF` để giảm VRAM qua `HF_TRANSLATE_REPO`). Tải model tự động (~3.5 GB) vào lần dùng đầu: chọn "HuggingFace Hy-MT2-1.8B" trong giao diện. Trước kia để chạy model này cần cài thêm server Ollama; giờ không cần — bỏ Ollama, chỉ dùng HuggingFace trực tiếp.
+Chạy model dịch Anh-Việt `tencent/Hy-MT2-1.8B` trực tiếp bằng Transformers. Mặc định load **4-bit quant** (bitsandbytes), giảm VRAM từ ~3.4 GB xuống ~1.2 GB mà chất lượng gần như không đổi. Tải model tự động (~3.5 GB) vào lần dùng đầu: chọn "HuggingFace Hy-MT2-1.8B" trong giao diện. Trước kia để chạy model này cần cài thêm server Ollama; giờ không cần — bỏ Ollama, chỉ dùng HuggingFace trực tiếp.
 
 ```bash
 # Chỉ cần chọn "HuggingFace Hy-MT2-1.8B" trong giao diện, lần đầu sẽ tải model
@@ -87,8 +87,9 @@ Biến môi trường (tùy chọn):
 | `HF_TRANSLATE_REPO` | `tencent/Hy-MT2-1.8B` | Model trên HuggingFace |
 | `HF_TRANSLATE_BATCH_SIZE` | `20` | Số dòng dịch mỗi lần gọi |
 | `HF_TRANSLATE_DEVICE` | `auto` | `cpu` hoặc `cuda` (tự dùng GPU nếu có) |
+| `HF_TRANSLATE_QUANT` | `4bit` | `4bit` (giảm VRAM) hoặc `none` (float16) |
 
-> Lưu ý: 1.8B nhẹ (~3.4 GB VRAM khi float16) vừa GPU 4 GB như RTX 3050. Chọn "Chạy dịch trên: GPU" trong UI để dùng CUDA.
+> Lưu ý: mặc định 4-bit nên chỉ cần ~1.2 GB VRAM, vừa GPU 4 GB như RTX 3050. Chọn "Chạy dịch trên: GPU" trong UI để dùng CUDA.
 
 ### 3. EnViT5 — offline Transformers
 
