@@ -108,6 +108,8 @@ button, a, select, .file-drop { -webkit-tap-highlight-color: transparent; }
 }
 .panel-head h2 { margin: 0; font-size: var(--text-base); font-weight: 700; }
 .panel-code { font-family: var(--font-mono); font-size: var(--text-xs); white-space: nowrap; }
+.btn-clear { border: 0; border-radius: var(--radius-pill); background: var(--color-error-soft); color: var(--color-error); font-size: var(--text-xs); font-weight: 600; padding: var(--space-2xs) var(--space-sm); cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+.btn-clear:hover { background: var(--color-error); color: white; }
 .setup form { display: grid; gap: var(--space-md); padding: var(--space-md); }
 
 .file-input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; }
@@ -550,7 +552,7 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
     </section>
 
     <section class="preview-panel" aria-labelledby="previewTitle">
-      <header class="panel-head"><h2 id="previewTitle">Preview & hàng đợi</h2><span class="panel-code">QUEUE <span id="queueCount">0</span></span></header>
+      <header class="panel-head"><h2 id="previewTitle">Preview & hàng đợi</h2><span class="panel-code">QUEUE <span id="queueCount">0</span></span><button type="button" class="btn-clear" id="clearAllBtn" hidden title="Xoá tất cả job đã xong và đang chờ">Xoá tất cả</button></header>
       <div class="screen">
         <video id="videoPreview" controls preload="metadata"></video>
         <p class="empty-copy" id="previewHint">Video đang xử lý xuất hiện ở đây; khi xong, preview chuyển sang bản burn-in.</p>
@@ -587,6 +589,7 @@ const startLabel = document.getElementById('startLabel');
 const serverStatus = document.getElementById('serverStatus');
 const queueSummary = document.getElementById('queueSummary');
 const queueList = document.getElementById('queueList');
+const clearAllBtn = document.getElementById('clearAllBtn');
 const queueCount = document.getElementById('queueCount');
 const jobLine = document.getElementById('jobLine');
 const errorBox = document.getElementById('errorBox');
@@ -723,6 +726,16 @@ function selectedVideoUrls() {
 }
 
 function updateStartButton() { startBtn.disabled = !selectedVideoUrls().length; }
+
+clearAllBtn.addEventListener('click', async () => {
+  if (!confirm('Xoá toàn bộ job đã xong và đang chờ?\nJob đang chạy sẽ giữ nguyên.')) return;
+  const res = await fetch('/api/jobs/clear', { method: 'POST' });
+  if (!res.ok) { errorBox.textContent = 'Lỗi khi xoá jobs.'; return; }
+  const { deleted } = await res.json();
+  if (!pollTimer) pollTimer = setInterval(pollQueue, 1500);
+  pollQueue();
+  jobLine.textContent = deleted ? `Đã xoá ${deleted} job.` : 'Không có job nào cần xoá.';
+});
 
 const whisperDevice = document.getElementById('whisperDevice');
 const whisperComputeType = document.getElementById('whisperComputeType');
@@ -956,6 +969,7 @@ function renderQueue(jobs) {
   });
 
   queueCount.textContent = String(jobs.length);
+  clearAllBtn.hidden = jobs.length === 0;
 
   const running = jobs.find(job => job.status === 'running');
   const waiting = jobs.filter(job => job.status === 'queued').length;

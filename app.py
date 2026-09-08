@@ -331,6 +331,23 @@ def delete_job(job_id: str):
     return {"ok": True}
 
 
+@app.post("/api/jobs/clear")
+def clear_jobs():
+    with QUEUE_LOCK:
+        pending = list(QUEUE_PENDING)
+        QUEUE_PENDING.clear()
+    deleted = 0
+    for jid in pending:
+        if _delete_job(jid):
+            deleted += 1
+    with JOBS_LOCK:
+        finished = [jid for jid, j in JOBS.items() if j.status in {"done", "error"}]
+    for jid in finished:
+        if _delete_job(jid):
+            deleted += 1
+    return {"ok": True, "deleted": deleted}
+
+
 @app.get("/api/jobs/{job_id}/download/{kind}")
 def download(job_id: str, kind: str):
     with JOBS_LOCK:
