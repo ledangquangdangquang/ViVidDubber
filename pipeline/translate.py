@@ -30,6 +30,7 @@ def _translate_blocks(
         texts = [block.text for block in batch]
         translated_texts = translator._translate_texts(texts, source_lang, target_lang)
         if len(translated_texts) != len(batch):
+            translated_texts = (translated_texts + [""] * len(batch))[: len(batch)]
             missing_idx = [
                 i for i, t in enumerate(translated_texts) if not t.strip()
             ]
@@ -71,6 +72,26 @@ _LANG_NAMES: dict[str, str] = {
 
 def _lang_name(code: str) -> str:
     return _LANG_NAMES.get(code, code)
+
+
+class _BatchTranslator:
+    batch_size: int
+    warnings: list[str]
+
+    def translate_blocks(
+        self,
+        blocks: list[SubtitleBlock],
+        source_lang: str = "en",
+        target_lang: str = "vi",
+        batch_size: int | None = None,
+    ) -> list[SubtitleBlock]:
+        if not blocks:
+            return []
+        self.warnings = []
+        return _translate_blocks(self, blocks, source_lang, target_lang, batch_size or self.batch_size)
+
+    def _translate_texts(self, texts: list[str], source_lang: str, target_lang: str) -> list[str]:
+        raise NotImplementedError
 
 
 class GoogleTranslator:
@@ -172,22 +193,12 @@ _OLLAMA_SYSTEM_PROMPT = (
 )
 
 
-class OllamaTranslator:
+class OllamaTranslator(_BatchTranslator):
     def __init__(self, model: str | None = None, base_url: str | None = None):
-        self.model = model or os.environ.get("OLLAMA_MODEL", "hf.co/tencent/Hy-MT2-7B-GGUF:Q4_K_M")
+        self.model = model or os.environ.get("OLLAMA_MODEL", "hf.co/tencent/Hy-MT2-1.8B-GGUF:Q4_K_M")
         self.base_url = (base_url or os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")).rstrip("/")
         self.batch_size = int(os.environ.get("OLLAMA_TRANSLATE_BATCH_SIZE", "20"))
         self.warnings: list[str] = []
-
-    def translate_blocks(
-        self,
-        blocks: list[SubtitleBlock],
-        source_lang: str = "en",
-        target_lang: str = "vi",
-        batch_size: int | None = None,
-    ) -> list[SubtitleBlock]:
-        self.warnings = []
-        return _translate_blocks(self, blocks, source_lang, target_lang, batch_size or self.batch_size)
 
     def _translate_texts(self, texts: list[str], source_lang: str, target_lang: str) -> list[str]:
         src_name = _lang_name(source_lang)
@@ -281,15 +292,16 @@ class OllamaTranslator:
         raise TranslationError(last_detail or "Ollama request failed")
 
 
-class EnViT5Translator:
+class EnViT5Translator(_BatchTranslator):
     """Offline translation with VietAI/envit5-translation (Transformers, GPU if available)."""
     _tokenizer = None
     _model = None
     _lock = __import__("threading").Lock()
 
-    def __init__(self, model: str | None = None):
+    def __init__(self, model: str | None = None, device: str | None = None):
         self.model = model or os.environ.get("ENVIT5_MODEL", "VietAI/envit5-translation")
         self.batch_size = int(os.environ.get("ENVIT5_BATCH_SIZE", "20"))
+        self.device = device or os.environ.get("ENVIT5_DEVICE", "")
         self.warnings: list[str] = []
 
     def _lazy_load(self):
@@ -306,21 +318,10 @@ class EnViT5Translator:
                 import torch
                 self._tokenizer = AutoTokenizer.from_pretrained(self.model)
                 self._model = AutoModelForSeq2SeqLM.from_pretrained(self.model)
-                if torch.cuda.is_available():
+                device = self.device or ("cuda" if torch.cuda.is_available() else "cpu")
+                if device != "cpu":
                     self._model = self._model.to("cuda")
         return self._model, self._tokenizer
-
-    def translate_blocks(
-        self,
-        blocks: list[SubtitleBlock],
-        source_lang: str = "en",
-        target_lang: str = "vi",
-        batch_size: int | None = None,
-    ) -> list[SubtitleBlock]:
-        if not blocks:
-            return []
-        self.warnings = []
-        return _translate_blocks(self, blocks, source_lang, target_lang, batch_size or self.batch_size)
 
     def _translate_texts(self, texts: list[str], source_lang: str, target_lang: str) -> list[str]:
         model, tokenizer = self._lazy_load()
@@ -344,64 +345,45 @@ class EnViT5Translator:
         return result
 
 
-class HuggingFaceTranslator:
-    """Offline translation with tencent/Hy-MT2-7B-GGUF via llama-cpp-python (no Ollama)."""
-    _llm = None
+class HuggingFaceTranslator(_BatchTranslator):
+    """Offline translation with tencent/Hy-MT2-1.8B via Transformers (GPU/CPU)."""
+    _model = None
+    _tokenizer = None
     _lock = __import__("threading").Lock()
-    _HF_REPO = "tencent/Hy-MT2-7B-GGUF"
-    _HF_FILE = "Hy-MT2-7B-Q4_K_M.gguf"
+    _HF_REPO = "tencent/Hy-MT2-1.8B"
     _DELIM = "\n-----"
 
-    def __init__(self, model: str | None = None):
+    def __init__(self, model: str | None = None, device: str | None = None):
         self.repo = model or os.environ.get("HF_TRANSLATE_REPO", self._HF_REPO)
-        self.batch_size = int(os.environ.get("HF_TRANSLATE_BATCH_SIZE", "8"))
+        self.batch_size = int(os.environ.get("HF_TRANSLATE_BATCH_SIZE", "20"))
+        self.device = device or os.environ.get("HF_TRANSLATE_DEVICE", "")
         self.warnings: list[str] = []
 
     def _lazy_load(self):
         with self._lock:
-            if self._llm is None:
+            if self._model is None:
                 try:
-                    from huggingface_hub import hf_hub_download
-                    from llama_cpp import Llama
+                    from transformers import AutoModelForCausalLM, AutoTokenizer
                 except ImportError as exc:
                     raise TranslationError(
-                        "HuggingFace translate needs 'llama-cpp-python' + 'huggingface-hub'. "
-                        "Install with: uv add llama-cpp-python huggingface-hub"
+                        "HuggingFace translate needs 'transformers' + 'torch'. "
+                        "Install with: uv add transformers torch"
                     ) from exc
-                model_path = hf_hub_download(repo_id=self.repo, filename=self._HF_FILE)
-                self._llm = Llama(
-                    model_path=model_path,
-                    n_ctx=4096,
-                    n_threads=os.cpu_count() or 4,
-                    verbose=False,
+                os.environ.setdefault("CC", "/usr/bin/gcc")
+                import torch
+                self._tokenizer = AutoTokenizer.from_pretrained(self.repo)
+                self._model = AutoModelForCausalLM.from_pretrained(
+                    self.repo, dtype=torch.float16
                 )
-        return self._llm
-
-    def translate_blocks(
-        self,
-        blocks: list[SubtitleBlock],
-        source_lang: str = "en",
-        target_lang: str = "vi",
-        batch_size: int | None = None,
-    ) -> list[SubtitleBlock]:
-        if not blocks:
-            return []
-        self.warnings = []
-        return _translate_blocks(self, blocks, source_lang, target_lang, batch_size or self.batch_size)
+                device = self.device or ("cuda" if torch.cuda.is_available() else "cpu")
+                if device != "cpu":
+                    self._model = self._model.to("cuda")
+                else:
+                    self._model = self._model.to("cpu")
+        return self._model, self._tokenizer
 
     def _translate_texts(self, texts: list[str], source_lang: str, target_lang: str) -> list[str]:
-        parts = self._request(texts, source_lang, target_lang)
-        expected = len(texts)
-        if len(parts) > expected:
-            parts = parts[:expected]
-        if len(parts) < expected:
-            for i in range(len(parts), expected):
-                single = self._request([texts[i]], source_lang, target_lang)
-                parts.append(single[0] if single else "")
-        return parts
-
-    def _request(self, texts: list[str], source_lang: str, target_lang: str) -> list[str]:
-        llm = self._lazy_load()
+        model, tokenizer = self._lazy_load()
         tgt_name = _lang_name(target_lang)
         source = self._DELIM.join(texts)
         prompt = (
@@ -411,16 +393,18 @@ class HuggingFaceTranslator:
             "attention to their placement.\n\n"
             f"{source}"
         )
-        out = llm.create_chat_completion(
-            messages=[{"role": "user", "content": prompt}],
+        messages = [{"role": "user", "content": prompt}]
+        input_ids = tokenizer.apply_chat_template(
+            messages, return_tensors="pt", add_generation_prompt=True
+        ).to(model.device)
+        outputs = model.generate(
+            input_ids,
+            max_new_tokens=512,
             temperature=0.3,
             top_p=0.6,
             top_k=20,
-            repeat_penalty=1.05,
-            max_tokens=4096,
+            do_sample=True,
         )
-        output_text = (out.get("choices", [{}])[0]
-                       .get("message", {})
-                       .get("content", "")
-                       .strip())
+        new_tokens = outputs[0][input_ids.shape[1]:]
+        output_text = tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
         return [p.strip() for p in output_text.split(self._DELIM) if p.strip()]

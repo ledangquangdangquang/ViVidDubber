@@ -11,7 +11,7 @@ import time
 
 import soundfile as sf
 
-from .media import MediaToolError, probe_media, require_tool, run_command
+from .media import probe_media, require_tool, run_command
 from .subtitle import SubtitleBlock, srt_time_to_seconds
 
 SAMPLE_RATE = 44100
@@ -166,7 +166,7 @@ class VieNeuTTS:
                 except ImportError as exc:
                     raise DubbingError("VieNeu-TTS needs 'vieneu'. Install with: uv add vieneu") from exc
                 os.environ.setdefault("CC", "/usr/bin/gcc")
-                v = Vieneu()
+                v = Vieneu(device=os.environ.get("VIENEU_DEVICE", "cpu"))
                 v.list_preset_voices()
                 self._instance = v
         return self._instance

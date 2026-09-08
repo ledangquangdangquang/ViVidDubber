@@ -11,7 +11,7 @@ video -> audio -> original subtitles (Whisper) -> translate to Vietnamese -> voi
 ## Features
 
 - **Speech-to-Text**: Faster-Whisper transcription, runs offline for free.
-- **Translation**: 4 options — Google Translate (free), Ollama local LLM, HuggingFace Hy-MT2-7B GGUF (direct, no Ollama), or EnViT5 offline (Transformers).
+- **Translation**: 4 options — Google Translate (free), Ollama local LLM, HuggingFace Hy-MT2-1.8B (direct, no Ollama), or EnViT5 offline (Transformers).
 - **AI Voice-over (TTS)**: Edge-TTS (online, Microsoft Neural) or VieNeu-TTS (offline, 23 Vietnamese voices).
 - **Video processing**: Automatic timeline alignment (atempo), burn subtitles or mux soft subs with FFmpeg.
 - **No paid APIs, no heavy Supertonic ONNX.**
@@ -60,13 +60,13 @@ Upload a video, pick your options (translation provider, voice-over, burn subtit
 
 Pick "Translation provider" in the web UI before creating a job:
 
-| | Google Translate | Ollama (Hy-MT2-7B) | HuggingFace Hy-MT2-7B | EnViT5 |
+| | Google Translate | Ollama (Hy-MT2-1.8B) | HuggingFace Hy-MT2-1.8B | EnViT5 |
 |---|---|---|---|---|
 | **API key** | None | None | None | None |
 | **Internet while running** | Yes | No | No | No |
 | **Setup** | None | Install Ollama + pull model | Automatic (first-run download) | Automatic (first-run download) |
-| **Download size** | 0 | ~4.6 GB (via Ollama) | ~4.6 GB | ~2.1 GB |
-| **Translation quality** | Good | Best (7B LLM) | Best (7B LLM) | OK (T5 base) |
+| **Download size** | 0 | ~1.1 GB (via Ollama) | ~3.5 GB | ~2.1 GB |
+| **Translation quality** | Good | Best (1.8B LLM) | Best (1.8B LLM) | OK (T5 base) |
 | **Speed** | Fast (online) | Slowest (large LLM) | Slow (large LLM) | Fast (T5, GPU) |
 | **Best for** | Always-online machines | Offline, highest quality | Offline, no Ollama install | Offline, speed matters |
 
@@ -80,7 +80,7 @@ No setup — just internet. The fastest way to get started.
 # 1. Install Ollama: https://ollama.com/download
 # 2. Start and pull the English-Vietnamese translation model:
 ollama serve &                        # or run the Ollama app
-ollama pull hf.co/tencent/Hy-MT2-7B-GGUF:Q4_K_M
+ollama pull hf.co/tencent/Hy-MT2-1.8B-GGUF:Q4_K_M
 # 3. Restart the app, pick "Ollama local" in the UI
 ```
 
@@ -88,26 +88,27 @@ Environment variables (optional):
 
 | Variable | Default | Description |
 |---|---|---|
-| `OLLAMA_MODEL` | `hf.co/tencent/Hy-MT2-7B-GGUF:Q4_K_M` | Model used for translation |
+| `OLLAMA_MODEL` | `hf.co/tencent/Hy-MT2-1.8B-GGUF:Q4_K_M` | Model used for translation |
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama server address |
 | `OLLAMA_TRANSLATE_BATCH_SIZE` | `20` | Lines translated per call |
 
-### 3. HuggingFace Hy-MT2-7B GGUF — direct, no Ollama
+### 3. HuggingFace Hy-MT2-1.8B — direct, no Ollama
 
-Runs `tencent/Hy-MT2-7B-GGUF` directly with llama-cpp-python (no Ollama server). Downloads the model automatically (~4.6 GB) on first use, then runs fully offline:
+Runs `tencent/Hy-MT2-1.8B` directly with Transformers (no Ollama server). Downloads the model automatically (~3.5 GB) on first use, then runs fully offline:
 
 ```bash
-# Just pick "HuggingFace Hy-MT2-7B (GGUF)" in the UI; the model downloads on first run
+# Just pick "HuggingFace Hy-MT2-1.8B" in the UI; the model downloads on first run
 ```
 
 Environment variables (optional):
 
 | Variable | Default | Description |
 |---|---|---|
-| `HF_TRANSLATE_REPO` | `tencent/Hy-MT2-7B-GGUF` | HuggingFace GGUF repo |
+| `HF_TRANSLATE_REPO` | `tencent/Hy-MT2-1.8B` | HuggingFace model repo |
 | `HF_TRANSLATE_BATCH_SIZE` | `20` | Lines translated per call |
+| `HF_TRANSLATE_DEVICE` | `auto` | `cpu` or `cuda` (falls back to GPU if available) |
 
-> Note: a CUDA GPU makes loading/warming faster; CPU works but is slower (7B is a large LLM).
+> Note: a CUDA GPU makes loading/warming faster; CPU works but is slower (1.8B is a small LLM, fits 4 GB VRAM).
 
 ### 4. EnViT5 — offline Transformers
 

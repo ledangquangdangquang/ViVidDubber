@@ -9,7 +9,7 @@ video -> audio -> phụ đề gốc (Whisper) -> dịch sang Việt -> lồng ti
 ## Tính năng
 
 - **Speech-to-Text**: Nhận diện giọng nói bằng Faster-Whisper (chạy offline, không tốn phí).
-- **Dịch thuật**: 4 lựa chọn — Google Translate (miễn phí), Ollama Local LLM, HuggingFace Hy-MT2-7B GGUF (trực tiếp, không cần Ollama), hoặc EnViT5 offline (Transformers).
+- **Dịch thuật**: 4 lựa chọn — Google Translate (miễn phí), Ollama Local LLM, HuggingFace Hy-MT2-1.8B (trực tiếp, không cần Ollama), hoặc EnViT5 offline (Transformers).
 - **Thuyết minh AI (TTS)**: Edge-TTS (online, Microsoft Neural) hoặc VieNeu-TTS (offline, 23 giọng Việt).
 - **Xử lý Video**: Tự động khớp timeline âm thanh (atempo), burn phụ đề hoặc mux soft sub bằng FFmpeg.
 - **Không phụ thuộc API trả phí hay Supertonic ONNX cồng kềnh.**
@@ -58,13 +58,13 @@ Tải video lên, chọn tùy chọn (provider dịch, lồng tiếng, burn ph�
 
 Chọn "Translation provider" trong giao diện web trước khi tạo job:
 
-| | Google Translate | Ollama (Hy-MT2-7B) | HuggingFace Hy-MT2-7B | EnViT5 |
+| | Google Translate | Ollama (Hy-MT2-1.8B) | HuggingFace Hy-MT2-1.8B | EnViT5 |
 |---|---|---|---|---|
 | **Cần API key** | Không | Không | Không | Không |
 | **Cần internet khi chạy** | Có | Không | Không | Không |
 | **Cài đặt** | Không cần | Cài Ollama + pull model | Tự động (tải model lần đầu) | Tự động (tải model lần đầu) |
-| **Dung lượng tải** | 0 | ~4.6 GB (qua Ollama) | ~4.6 GB | ~2.1 GB |
-| **Chất lượng dịch** | Tốt | Tốt nhất (7B LLM) | Tốt nhất (7B LLM) | Khá (T5 base) |
+| **Dung lượng tải** | 0 | ~1.1 GB (qua Ollama) | ~3.5 GB | ~2.1 GB |
+| **Chất lượng dịch** | Tốt | Tốt nhất (1.8B LLM) | Tốt nhất (1.8B LLM) | Khá (T5 base) |
 | **Tốc độ** | Nhanh (online) | Chậm nhất (LLM lớn) | Chậm (LLM lớn) | Nhanh (T5, GPU) |
 | **Phù hợp** | Máy luôn online | Máy offline, cần chất lượng cao | Máy offline, không muốn cài Ollama | Máy offline, cần tốc độ |
 
@@ -78,7 +78,7 @@ Không cần cài đặt gì — chỉ cần internet. Đây là lựa chọn nh
 # 1. Cài Ollama: https://ollama.com/download
 # 2. Khởi động & tải model dịch Anh-Việt:
 ollama serve &                        # hoặc chạy app Ollama
-ollama pull hf.co/tencent/Hy-MT2-7B-GGUF:Q4_K_M
+ollama pull hf.co/tencent/Hy-MT2-1.8B-GGUF:Q4_K_M
 # 3. Restart app, chọn "Ollama local" trong giao diện
 ```
 
@@ -86,26 +86,27 @@ Biến môi trường (tùy chọn):
 
 | Biến | Mặc định | Mô tả |
 |---|---|---|
-| `OLLAMA_MODEL` | `hf.co/tencent/Hy-MT2-7B-GGUF:Q4_K_M` | Model dùng để dịch |
+| `OLLAMA_MODEL` | `hf.co/tencent/Hy-MT2-1.8B-GGUF:Q4_K_M` | Model dùng để dịch |
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Địa chỉ Ollama server |
 | `OLLAMA_TRANSLATE_BATCH_SIZE` | `20` | Số dòng dịch mỗi lần gọi |
 
-### 3. HuggingFace Hy-MT2-7B GGUF — trực tiếp, không cần Ollama
+### 3. HuggingFace Hy-MT2-1.8B — trực tiếp, không cần Ollama
 
-Chạy model dịch Anh-Việt `tencent/Hy-MT2-7B-GGUF` trực tiếp từ HuggingFace bằng Transformers (không cần Ollama server). Tải model tự động (~4.6 GB) vào lần dùng đầu:
+Chạy model dịch Anh-Việt `tencent/Hy-MT2-1.8B` trực tiếp từ HuggingFace bằng Transformers (không cần Ollama server). Tải model tự động (~3.5 GB) vào lần dùng đầu:
 
 ```bash
-# Chỉ cần chọn "HuggingFace Hy-MT2-7B (GGUF)" trong giao diện, lần đầu sẽ tải model
+# Chỉ cần chọn "HuggingFace Hy-MT2-1.8B" trong giao diện, lần đầu sẽ tải model
 ```
 
 Biến môi trường (tùy chọn):
 
 | Biến | Mặc định | Mô tả |
 |---|---|---|
-| `HF_TRANSLATE_REPO` | `tencent/Hy-MT2-7B-GGUF` | Model GGUF trên HuggingFace |
+| `HF_TRANSLATE_REPO` | `tencent/Hy-MT2-1.8B` | Model trên HuggingFace |
 | `HF_TRANSLATE_BATCH_SIZE` | `20` | Số dòng dịch mỗi lần gọi |
+| `HF_TRANSLATE_DEVICE` | `auto` | `cpu` hoặc `cuda` (tự dùng GPU nếu có) |
 
-> Lưu ý: GPU có CUDA sẽ tải nhanh hơn; nếu chỉ có CPU, vẫn chạy được nhưng chậm hơn (model 7B là LLM lớn).
+> Lưu ý: 1.8B nhẹ (~3.4 GB VRAM khi float16) vừa GPU 4 GB như RTX 3050. Chọn "Chạy dịch trên: GPU" trong UI để dùng CUDA.
 
 ### 4. EnViT5 — offline Transformers
 

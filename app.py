@@ -7,7 +7,6 @@ import json
 import os
 from pathlib import Path
 import shutil
-import sys
 import threading
 import time
 import urllib.request
@@ -24,7 +23,7 @@ MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
 MAX_JOBS = 50
 JOB_TTL_SECONDS = 3600 * 6  # 6 hours
 
-from pipeline.media import burn_subtitles, extract_audio, mux_soft_subtitles, probe_media
+from pipeline.media import burn_subtitles, extract_audio, mux_soft_subtitles
 from pipeline.subtitle import parse_srt, write_srt
 from pipeline.transcribe import FasterWhisperTranscriber
 from pipeline.translate import EnViT5Translator, GoogleTranslator, HuggingFaceTranslator, OllamaTranslator
@@ -42,7 +41,6 @@ class JobState:
     updated_at: float = field(default_factory=time.time)
     files: dict[str, str] = field(default_factory=dict)
     options: dict[str, str] = field(default_factory=dict)
-    media: dict | None = None
     step_timings: dict[str, float] = field(default_factory=dict)
     translation_warnings: list[str] = field(default_factory=list)
     _current_step_start: float = field(default=0.0, repr=False)
@@ -179,7 +177,7 @@ def _safe_suffix(filename: str) -> str:
 
 def _ollama_status() -> tuple[bool, bool, str | None]:
     base_url = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
-    model = os.environ.get("OLLAMA_MODEL", "hf.co/tencent/Hy-MT2-7B-GGUF:Q4_K_M")
+    model = os.environ.get("OLLAMA_MODEL", "hf.co/tencent/Hy-MT2-1.8B-GGUF:Q4_K_M")
     try:
         with urllib.request.urlopen(f"{base_url}/api/tags", timeout=2) as response:
             payload = json.loads(response.read().decode("utf-8"))
@@ -210,7 +208,7 @@ def config():
     return {
         "ollama_available": ollama_available,
         "ollama_model_available": ollama_model_available,
-        "ollama_model": os.environ.get("OLLAMA_MODEL", "hf.co/tencent/Hy-MT2-7B-GGUF:Q4_K_M"),
+        "ollama_model": os.environ.get("OLLAMA_MODEL", "hf.co/tencent/Hy-MT2-1.8B-GGUF:Q4_K_M"),
         "ollama_error": ollama_error,
     }
 
@@ -220,9 +218,12 @@ async def create_job(
     file: UploadFile = File(...),
     target_lang: str = Form("vi"),
     whisper_model: str = Form("small"),
+    whisper_device: str = Form("cpu"),
+    whisper_compute_type: str = Form(""),
     export_mode: str = Form("burn"),
     translate: str = Form("true"),
     translation_provider: str = Form("google"),
+    translate_device: str = Form("cpu"),
     dub: str = Form("true"),
     tts_voice: str = Form("vi-VN-HoaiMyNeural"),
     tts_provider: str = Form("edge"),
@@ -266,9 +267,12 @@ async def create_job(
         options={
             "target_lang": target_lang,
             "whisper_model": whisper_model,
+            "whisper_device": whisper_device,
+            "whisper_compute_type": whisper_compute_type,
             "export_mode": export_mode,
             "translate": translate,
             "translation_provider": translation_provider,
+            "translate_device": translate_device,
             "dub": dub,
             "tts_voice": tts_voice,
             "tts_provider": tts_provider,
@@ -366,18 +370,18 @@ def _run_job(job_id: str) -> None:
     output_burned_video = job_dir / f"{input_stem}_vi_burned.mp4"
 
     try:
-        _set_step(job_id, "Reading video metadata", 5)
+        _set_step(job_id, "Extracting audio", 15)
         with JOBS_LOCK:
             JOBS[job_id].status = "running"
-        media = probe_media(input_path)
-        _set_job(job_id, media=media)
-
-        _set_step(job_id, "Extracting audio", 15)
         extract_audio(input_path, audio_path)
         _add_file(job_id, "audio", audio_path)
 
         _set_step(job_id, "Transcribing audio to SRT", 35)
-        transcriber = FasterWhisperTranscriber(model_name=opts["whisper_model"])
+        transcriber = FasterWhisperTranscriber(
+            model_name=opts["whisper_model"],
+            device=opts.get("whisper_device"),
+            compute_type=opts.get("whisper_compute_type") or None,
+        )
         original_blocks = transcriber.transcribe_to_srt(
             audio_path,
             original_srt,
@@ -391,9 +395,9 @@ def _run_job(job_id: str) -> None:
             if provider == "ollama":
                 translator = OllamaTranslator()
             elif provider == "envit5":
-                translator = EnViT5Translator()
+                translator = EnViT5Translator(device=opts.get("translate_device", "cpu"))
             elif provider == "huggingface":
-                translator = HuggingFaceTranslator()
+                translator = HuggingFaceTranslator(device=opts.get("translate_device", "cpu"))
             else:
                 translator = GoogleTranslator()
 

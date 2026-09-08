@@ -435,6 +435,15 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
             </select>
             <span class="field-help">Lớn hơn thường chính xác hơn</span>
           </div>
+          <div class="field">
+            <label for="whisperDevice">Chạy Whisper trên</label>
+            <select id="whisperDevice" name="whisper_device">
+              <option value="cpu" selected>CPU</option>
+              <option value="cuda">GPU (CUDA)</option>
+            </select>
+            <input type="hidden" id="whisperComputeType" name="whisper_compute_type" value="">
+            <span class="field-help" id="whisperDeviceHelp">GPU nhanh hơn nhiều; tự quay về CPU nếu lỗi CUDA</span>
+          </div>
         </div>
 
         <div class="field">
@@ -443,9 +452,18 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
              <option value="google" selected>Google Translate (free)</option>
              <option value="ollama">Ollama local</option>
              <option value="envit5">EnViT5 (offline GPU)</option>
-             <option value="huggingface">HuggingFace Hy-MT2-7B (GGUF)</option>
+             <option value="huggingface">HuggingFace Hy-MT2-1.8B</option>
            </select>
            <span class="field-help" id="translationProviderHelp">Google Translate free, không cần API key</span>
+        </div>
+
+        <div class="field">
+          <label for="translateDevice">Chạy dịch trên</label>
+          <select id="translateDevice" name="translate_device">
+            <option value="cpu" selected>CPU</option>
+            <option value="cuda">GPU (CUDA)</option>
+          </select>
+          <span class="field-help" id="translateDeviceHelp">Áp dụng cho EnViT5 và Hy-MT2. Google/Ollama theo cấu hình riêng.</span>
         </div>
 
         <input type="hidden" id="targetLang" name="target_lang" value="vi">
@@ -614,6 +632,12 @@ function showSelectedFiles(files) {
 
 fileInput.addEventListener('change', () => showSelectedFiles(fileInput.files));
 translationProvider.addEventListener('change', updateTranslationProviderUi);
+
+const whisperDevice = document.getElementById('whisperDevice');
+const whisperComputeType = document.getElementById('whisperComputeType');
+whisperDevice.addEventListener('change', () => {
+  whisperComputeType.value = whisperDevice.value === 'cuda' ? 'float16' : '';
+});
 
   const ttsProvider = document.getElementById('ttsProvider');
   ttsProvider.addEventListener('change', updateTtsProviderUi);
@@ -917,8 +941,8 @@ function updateTranslationProviderUi() {
      return;
    }
    if (translationProvider.value === 'huggingface') {
-     translationProviderHelp.textContent = 'Hy-MT2-7B GGUF offline · tải model từ HuggingFace · GPU nếu có';
-     configNote.textContent = 'HuggingFace direct · Transformers · tải model ~4.6GB · offline sau lần đầu';
+translationProviderHelp.textContent = 'Hy-MT2-1.8B offline · tải model từ HuggingFace · GPU nếu có';
+      configNote.textContent = 'HuggingFace direct · Transformers · tải model ~3.5GB · offline sau lần đầu';
      serverStatus.textContent = 'HF MODEL';
      serverStatus.dataset.state = 'ready';
      return;
