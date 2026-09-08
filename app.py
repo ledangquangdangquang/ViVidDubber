@@ -23,7 +23,7 @@ MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
 MAX_JOBS = 50
 JOB_TTL_SECONDS = 3600 * 6  # 6 hours
 
-from pipeline.media import burn_subtitles, extract_audio, mux_soft_subtitles
+from pipeline.media import burn_subtitles, download_video, extract_audio, mux_soft_subtitles, resolve_video_urls
 from pipeline.subtitle import parse_srt, write_srt
 from pipeline.transcribe import FasterWhisperTranscriber
 from pipeline.translate import EnViT5Translator, GoogleTranslator, HuggingFaceTranslator, OllamaTranslator
@@ -213,9 +213,22 @@ def config():
     }
 
 
+@app.post("/api/resolve")
+async def resolve_url(video_url: str = Form("")):
+    url = video_url.strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="No URL provided.")
+    try:
+        urls = resolve_video_urls(url)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Failed to resolve URL: {exc}")
+    return {"urls": urls}
+
+
 @app.post("/api/jobs")
 async def create_job(
-    file: UploadFile = File(...),
+    file: UploadFile = File(None),
+    video_url: str = Form(""),
     target_lang: str = Form("vi"),
     whisper_model: str = Form("small"),
     whisper_device: str = Form("cpu"),
@@ -234,32 +247,42 @@ async def create_job(
         raise HTTPException(status_code=400, detail="Unsupported subtitle export mode.")
     if translation_provider not in {"google", "ollama", "envit5", "huggingface"}:
         raise HTTPException(status_code=400, detail="Unsupported translation provider.")
+    if not file and not video_url.strip():
+        raise HTTPException(status_code=400, detail="Provide a video file or a YouTube URL.")
 
     _cleanup_jobs()
-
-    content_length = file.size
-    if content_length and content_length > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="File too large.")
 
     job_id = uuid.uuid4().hex[:12]
     job_dir = _JOBS_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
-    input_path = job_dir / f"input{_safe_suffix(file.filename or '')}"
 
-    uploaded = 0
-    with input_path.open("wb") as out:
-        while True:
-            chunk = file.file.read(1024 * 1024)
-            if not chunk:
-                break
-            uploaded += len(chunk)
-            if uploaded > MAX_UPLOAD_BYTES:
-                input_path.unlink(missing_ok=True)
-                shutil.rmtree(job_dir, ignore_errors=True)
-                raise HTTPException(status_code=413, detail="File too large.")
-            out.write(chunk)
-
-    original_stem = Path(file.filename or "input").stem
+    video_url = video_url.strip()
+    if video_url:
+        try:
+            input_path, source_title = download_video(video_url, job_dir)
+        except Exception as exc:
+            shutil.rmtree(job_dir, ignore_errors=True)
+            raise HTTPException(status_code=400, detail=f"Failed to download video: {exc}")
+    else:
+        if file is None:
+            raise HTTPException(status_code=400, detail="Provide a video file or a YouTube URL.")
+        content_length = file.size
+        if content_length and content_length > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="File too large.")
+        input_path = job_dir / f"input{_safe_suffix(file.filename or '')}"
+        uploaded = 0
+        with input_path.open("wb") as out:
+            while True:
+                chunk = file.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                uploaded += len(chunk)
+                if uploaded > MAX_UPLOAD_BYTES:
+                    input_path.unlink(missing_ok=True)
+                    shutil.rmtree(job_dir, ignore_errors=True)
+                    raise HTTPException(status_code=413, detail="File too large.")
+                out.write(chunk)
+        source_title = Path(file.filename or "input").stem
     state = JobState(
         id=job_id,
         files={"input": str(input_path)},
@@ -278,7 +301,7 @@ async def create_job(
             "tts_provider": tts_provider,
             "background_volume": str(background_volume),
             "voice_volume": str(voice_volume),
-            "original_stem": original_stem,
+            "original_stem": source_title,
         },
     )
     with JOBS_LOCK:

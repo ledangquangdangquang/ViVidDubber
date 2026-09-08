@@ -180,7 +180,8 @@ Environment variables (optional):
 
 ## API (integration)
 
-- `POST /api/jobs` — create a job (multipart: `file` + form options)
+- `POST /api/jobs` — create a job (multipart `file` + form options, or `video_url` a single YouTube video)
+- `POST /api/resolve` — expand a YouTube link into per-video URLs (playlist → each video)
 - `GET /api/queue` — list jobs
 - `GET /api/jobs/{id}` — job status
 - `DELETE /api/jobs/{id}` — delete a job (running job → 409)

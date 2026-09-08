@@ -131,6 +131,7 @@ button, a, select, .file-drop { -webkit-tap-highlight-color: transparent; }
 .file-drop:focus-within { outline: 3px solid var(--color-focus); outline-offset: 3px; }
 
 .field-grid { display: grid; gap: var(--space-md); }
+.radio-row { display: grid; gap: var(--space-sm); grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .field { display: grid; gap: var(--space-xs); min-width: 0; }
 .field label, .field-label { font-size: var(--text-sm); font-weight: 600; }
 .field-help { min-height: 1lh; color: var(--color-muted); font-size: var(--text-xs); }
@@ -419,12 +420,24 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
     <section class="setup" aria-labelledby="setupTitle">
       <header class="panel-head"><h2 id="setupTitle">Thiết lập batch</h2><span class="panel-code">N INPUT → N MP4</span></header>
       <form id="jobForm">
-        <div>
-          <input class="file-input" id="videoFile" name="file" type="file" accept="video/*,.mkv,.mov,.mp4,.webm,.avi,.m4v" multiple required aria-required="true">
+        <div class="field">
+          <label>Nguồn video</label>
+          <div class="radio-row">
+            <label class="output-card"><input type="radio" name="source" value="file" checked><span><strong>File video</strong><small>Chọn hoặc thả file từ máy</small></span></label>
+            <label class="output-card"><input type="radio" name="source" value="url"><span><strong>Link YouTube</strong><small>Dán link video hoặc playlist</small></span></label>
+          </div>
+        </div>
+        <div id="fileSource">
+          <input class="file-input" id="videoFile" name="file" type="file" accept="video/*,.mkv,.mov,.mp4,.webm,.avi,.m4v" multiple aria-required="true">
           <label class="file-drop" id="fileDrop" for="videoFile" tabindex="0">
             <strong id="fileName">Chọn hoặc thả nhiều video</strong>
             <small id="fileMeta">MP4 · MOV · MKV · WEBM · AVI · M4V · chạy lần lượt</small>
           </label>
+        </div>
+        <div id="urlSource" class="field" hidden>
+          <label for="videoUrl">Link YouTube</label>
+          <input type="url" id="videoUrl" name="video_url" placeholder="https://www.youtube.com/watch?v=… hoặc playlist">
+          <span class="field-help">Mỗi link trở thành 1 job. Link playlist → mỗi video 1 job riêng (download tuần tự). Ưu tiên 720p.</span>
         </div>
 
         <div class="field-grid">
@@ -553,6 +566,9 @@ const fileInput = document.getElementById('videoFile');
 const fileDrop = document.getElementById('fileDrop');
 const fileName = document.getElementById('fileName');
 const fileMeta = document.getElementById('fileMeta');
+const fileSource = document.getElementById('fileSource');
+const urlSource = document.getElementById('urlSource');
+const videoUrl = document.getElementById('videoUrl');
 const videoPreview = document.getElementById('videoPreview');
 const previewHint = document.getElementById('previewHint');
 const startBtn = document.getElementById('startBtn');
@@ -633,6 +649,17 @@ function showSelectedFiles(files) {
 fileInput.addEventListener('change', () => showSelectedFiles(fileInput.files));
 translationProvider.addEventListener('change', updateTranslationProviderUi);
 
+const sourceRadios = form.querySelectorAll('input[name="source"]');
+function currentSource() { return form.querySelector('input[name="source"]:checked').value; }
+function updateSourceUi() {
+  const url = currentSource() === 'url';
+  fileSource.hidden = url;
+  urlSource.hidden = !url;
+  fileInput.required = !url;
+}
+sourceRadios.forEach(r => r.addEventListener('change', updateSourceUi));
+updateSourceUi();
+
 const whisperDevice = document.getElementById('whisperDevice');
 const whisperComputeType = document.getElementById('whisperComputeType');
 whisperDevice.addEventListener('change', () => {
@@ -666,38 +693,63 @@ function updateVolumeVisibility() {
 
 form.addEventListener('submit', async event => {
   event.preventDefault();
-  const files = [...fileInput.files];
-  if (!files.length) {
-    fileDrop.dataset.state = 'error';
-    fileMeta.textContent = 'Chưa có video. Chọn ít nhất một file để tiếp tục.';
-    return;
-  }
   if (uploading) return;
   uploading = true;
   errorBox.textContent = '';
   startBtn.disabled = true;
   startBtn.dataset.state = 'loading';
-  startLabel.textContent = 'Đang upload…';
+  const url = currentSource() === 'url';
+  startLabel.textContent = url ? 'Đang thêm link…' : 'Đang upload…';
+
+  const makeFd = () => {
+    const fd = new FormData();
+    new FormData(form).forEach((value, key) => { if (key !== 'file') fd.append(key, value); });
+    fd.set('translate', translateToggle.checked ? 'true' : 'false');
+    fd.set('dub', dubToggle.checked ? 'true' : 'false');
+    fd.set('tts_voice', ttsVoice.value);
+    fd.set('background_volume', String(Number(bgVolume.value) / 100));
+    fd.set('voice_volume', String(Number(voiceVolume.value) / 100));
+    return fd;
+  };
 
   try {
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      jobLine.textContent = `Đang upload ${i + 1}/${files.length}: ${file.name}`;
-      const fd = new FormData();
-      new FormData(form).forEach((value, key) => { if (key !== 'file') fd.append(key, value); });
-      fd.append('file', file);
-      fd.set('translate', translateToggle.checked ? 'true' : 'false');
-      fd.set('dub', dubToggle.checked ? 'true' : 'false');
-      fd.set('tts_voice', ttsVoice.value);
-      fd.set('background_volume', String(Number(bgVolume.value) / 100));
-      fd.set('voice_volume', String(Number(voiceVolume.value) / 100));
-
-      const response = await fetch('/api/jobs', { method: 'POST', body: fd });
-      if (!response.ok) throw new Error(`Upload thất bại (${file.name}): ${await response.text()}`);
-      await response.json();
+    if (url) {
+      const value = videoUrl.value.trim();
+      if (!value) { throw new Error('Chưa có link YouTube. Dán link để tiếp tục.'); }
+      const resolveFd = new FormData();
+      resolveFd.set('video_url', value);
+      jobLine.textContent = `Đang phân tích link…`;
+      const resolveRes = await fetch('/api/resolve', { method: 'POST', body: resolveFd });
+      if (!resolveRes.ok) throw new Error(`Phân tích link thất bại: ${await resolveRes.text()}`);
+      const { urls } = await resolveRes.json();
+      for (let i = 0; i < urls.length; i++) {
+        const fd = makeFd();
+        fd.set('video_url', urls[i]);
+        jobLine.textContent = `Đang thêm video ${i + 1}/${urls.length}…`;
+        const response = await fetch('/api/jobs', { method: 'POST', body: fd });
+        if (!response.ok) throw new Error(`Thêm link thất bại: ${await response.text()}`);
+        await response.json();
+      }
+      videoUrl.value = '';
+    } else {
+      const files = [...fileInput.files];
+      if (!files.length) {
+        fileDrop.dataset.state = 'error';
+        fileMeta.textContent = 'Chưa có video. Chọn ít nhất một file để tiếp tục.';
+        return;
+      }
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        jobLine.textContent = `Đang upload ${i + 1}/${files.length}: ${file.name}`;
+        const fd = makeFd();
+        fd.append('file', file);
+        const response = await fetch('/api/jobs', { method: 'POST', body: fd });
+        if (!response.ok) throw new Error(`Upload thất bại (${file.name}): ${await response.text()}`);
+        await response.json();
+      }
+      fileInput.value = '';
+      resetDrop();
     }
-    fileInput.value = '';
-    resetDrop();
   } catch (error) {
     finishWithError(error);
   } finally {

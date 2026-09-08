@@ -10,6 +10,50 @@ class MediaToolError(RuntimeError):
     pass
 
 
+def resolve_video_urls(url: str) -> list[str]:
+    """Expand a YouTube link into a list of individual video URLs (single video → [url])."""
+    import yt_dlp
+
+    ydl_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "extract_flat": True,
+        "force_generic_extractor": False,
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+    if info.get("_type") == "playlist":
+        urls = []
+        for entry in info.get("entries") or []:
+            if entry and entry.get("url"):
+                urls.append(entry["url"])
+        if not urls:
+            urls = [url]
+        return urls
+    return [url]
+
+
+def download_video(url: str, job_dir: Path, preferred_height: int = 720) -> tuple[Path, str]:
+    """Download a single YouTube video via yt-dlp. Returns (input_path, title)."""
+    import yt_dlp
+
+    ydl_opts = {
+        "outtmpl": str(job_dir / "input.%(ext)s"),
+        "format": f"bv*[height<={preferred_height}]+ba/b[height<={preferred_height}]/bv*+ba/b",
+        "merge_output_format": "mp4",
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        title = (info.get("entries") or [info])[0].get("title") or "video"
+    files = sorted(job_dir.glob("input.*"))
+    if not files:
+        raise MediaToolError(f"No video downloaded from {url}")
+    return files[0], title
+
+
 def require_tool(tool_name: str) -> None:
     if shutil.which(tool_name) is None:
         raise MediaToolError(f"Required binary '{tool_name}' was not found in PATH.")

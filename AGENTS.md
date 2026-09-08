@@ -31,7 +31,8 @@ cd vi-video-dubber && uv run python app.py     # UI: http://127.0.0.1:8787
 ### API & job artifacts
 
 - `POST /api/jobs` (multipart `file` + form options), `GET /api/queue`, `GET /api/jobs/{id}`, `DELETE /api/jobs/{id}` (running job → 409), `GET /api/jobs/{id}/download/{kind}`, `GET /api/config` (Ollama reachability).
-- Limits: 2 GB upload, 50 jobs, finished jobs auto-deleted after 6 h TTL.
+- Limits: 2 GB upload (file mode), 50 jobs, finished jobs auto-deleted after 6 h TTL.
+- Two input modes via `POST /api/jobs`: `file` (multipart) or `video_url` (a single YouTube video — downloaded by yt-dlp to `jobs/<id>/input.*`, 720p preferred, title becomes the download stem). Playlists: `POST /api/resolve` flattens a link into per-video URLs (`extract_flat`), and the UI submits one `POST /api/jobs` per video so each becomes its own job (downloads run sequentially). `_run_job` treats the downloaded file identically to an upload.
 - Per-job dir `vi-video-dubber/jobs/<id>/`: `input*`, `audio.wav`, `original.srt`, `vi.srt`, `<stem>_vi_soft.mp4`, `<stem>_vi_dub.mp4`, `<stem>_vi_burned.mp4`. Download filenames are renamed to `<original_stem>_…`.
 
 ### Subtitle handling rules

@@ -178,7 +178,8 @@ Biến môi trường (tùy chọn):
 
 ## API (dành cho tích hợp)
 
-- `POST /api/jobs` — tạo job (multipart: `file` + form options)
+- `POST /api/jobs` — tạo job (multipart: `file` + form options, hoặc `video_url` một video YouTube)
+- `POST /api/resolve` — mở rộng link YouTube thành danh sách URL từng video (playlist → từng video)
 - `GET /api/queue` — danh sách jobs
 - `GET /api/jobs/{id}` — trạng thái job
 - `DELETE /api/jobs/{id}` — xóa job (job đang chạy → 409)
