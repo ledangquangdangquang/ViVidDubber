@@ -291,9 +291,11 @@ class HuggingFaceTranslator(_BatchTranslator):
         source = self._DELIM.join(texts)
         prompt = (
             f"Please accurately translate the following text into {tgt_name}. "
-            "You must retain the exact same number of delimiters in the translation. "
-            "Strictly do not omit, escape, or translate these symbols, and pay close "
-            "attention to their placement.\n\n"
+            "These are subtitle lines, so keep every translation short and concise — "
+            "roughly the same length as the source, never longer. Avoid fluff, filler, "
+            "or redundant words. You must retain the exact same number of delimiters "
+            "in the translation. Strictly do not omit, escape, or translate these "
+            "symbols, and pay close attention to their placement.\n\n"
             f"{source}"
         )
         messages = [{"role": "user", "content": prompt}]
