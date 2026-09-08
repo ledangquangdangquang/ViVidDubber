@@ -108,8 +108,6 @@ button, a, select, .file-drop { -webkit-tap-highlight-color: transparent; }
 }
 .panel-head h2 { margin: 0; font-size: var(--text-base); font-weight: 700; }
 .panel-code { font-family: var(--font-mono); font-size: var(--text-xs); white-space: nowrap; }
-.btn-clear { border: 0; border-radius: var(--radius-pill); background: var(--color-error-soft); color: var(--color-error); font-size: var(--text-xs); font-weight: 600; padding: var(--space-2xs) var(--space-sm); cursor: pointer; white-space: nowrap; flex-shrink: 0; }
-.btn-clear:hover { background: var(--color-error); color: white; }
 .setup form { display: grid; gap: var(--space-md); padding: var(--space-md); }
 
 .file-input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; }
@@ -306,6 +304,7 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
 .queue-item[data-state="running"] { border-color: var(--color-accent-deep); background: var(--color-accent-2-soft); }
 .queue-item[data-state="done"] { border-color: var(--color-success); }
 .queue-item[data-state="error"] { border-color: var(--color-error); }
+.queue-item[data-state="paused"] { border-color: var(--color-accent-2); }
 .queue-head {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -328,7 +327,8 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
 .status-chip[data-state="running"] { background: var(--color-accent); border-color: var(--color-accent-deep); }
 .status-chip[data-state="done"] { background: var(--color-success-soft); border-color: var(--color-success); }
 .status-chip[data-state="error"] { background: var(--color-error-soft); border-color: var(--color-error); }
-.cancel-btn {
+.status-chip[data-state="paused"] { background: var(--color-accent-2-soft); border-color: var(--color-accent-2); }
+.ctl-btn {
   width: 2rem;
   height: 2rem;
   border: var(--rule-hair) solid var(--color-rule-2);
@@ -338,9 +338,12 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
   cursor: pointer;
   font-family: var(--font-mono);
   line-height: 1;
+  flex-shrink: 0;
 }
-.cancel-btn:hover { border-color: var(--color-error); color: var(--color-error); }
-.cancel-btn[hidden] { display: none; }
+.ctl-btn:hover { border-color: var(--color-accent-deep); color: var(--color-accent-deep); }
+.ctl-cancel:hover { border-color: var(--color-error); color: var(--color-error); }
+.ctl-btn[hidden] { display: none; }
+.ctl-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .queue-item .progress-track { margin: 0; }
 .queue-item .jobline { font-size: var(--text-xs); }
 
@@ -552,7 +555,7 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
     </section>
 
     <section class="preview-panel" aria-labelledby="previewTitle">
-      <header class="panel-head"><h2 id="previewTitle">Preview & hàng đợi</h2><span class="panel-code">QUEUE <span id="queueCount">0</span></span><button type="button" class="btn-clear" id="clearAllBtn" hidden title="Xoá tất cả job đã xong và đang chờ">Xoá tất cả</button></header>
+      <header class="panel-head"><h2 id="previewTitle">Preview & hàng đợi</h2><span class="panel-code">QUEUE <span id="queueCount">0</span></span></header>
       <div class="screen">
         <video id="videoPreview" controls preload="metadata"></video>
         <p class="empty-copy" id="previewHint">Video đang xử lý xuất hiện ở đây; khi xong, preview chuyển sang bản burn-in.</p>
@@ -589,7 +592,6 @@ const startLabel = document.getElementById('startLabel');
 const serverStatus = document.getElementById('serverStatus');
 const queueSummary = document.getElementById('queueSummary');
 const queueList = document.getElementById('queueList');
-const clearAllBtn = document.getElementById('clearAllBtn');
 const queueCount = document.getElementById('queueCount');
 const jobLine = document.getElementById('jobLine');
 const errorBox = document.getElementById('errorBox');
@@ -727,16 +729,6 @@ function selectedVideoUrls() {
 
 function updateStartButton() { startBtn.disabled = !selectedVideoUrls().length; }
 
-clearAllBtn.addEventListener('click', async () => {
-  if (!confirm('Xoá toàn bộ job đã xong và đang chờ?\nJob đang chạy sẽ giữ nguyên.')) return;
-  const res = await fetch('/api/jobs/clear', { method: 'POST' });
-  if (!res.ok) { errorBox.textContent = 'Lỗi khi xoá jobs.'; return; }
-  const { deleted } = await res.json();
-  if (!pollTimer) pollTimer = setInterval(pollQueue, 1500);
-  pollQueue();
-  jobLine.textContent = deleted ? `Đã xoá ${deleted} job.` : 'Không có job nào cần xoá.';
-});
-
 const whisperDevice = document.getElementById('whisperDevice');
 const whisperComputeType = document.getElementById('whisperComputeType');
 whisperDevice.addEventListener('change', () => {
@@ -869,21 +861,25 @@ function createRow(jobId) {
   actions.className = 'queue-actions';
   const chip = document.createElement('span');
   chip.className = 'status-chip';
+  const pause = document.createElement('button');
+  pause.type = 'button';
+  pause.className = 'ctl-btn';
+  pause.textContent = '⏸';
+  pause.title = 'Tạm dừng';
+  const resume = document.createElement('button');
+  resume.type = 'button';
+  resume.className = 'ctl-btn';
+  resume.textContent = '▶';
+  resume.title = 'Tiếp tục';
   const cancel = document.createElement('button');
-  cancel.className = 'cancel-btn';
   cancel.type = 'button';
+  cancel.className = 'ctl-btn ctl-cancel';
   cancel.textContent = '✕';
-  cancel.title = 'Xoá khỏi hàng đợi';
-  cancel.addEventListener('click', async () => {
-    cancel.disabled = true;
-    try {
-      await fetch(`/api/jobs/${jobId}`, { method: 'DELETE' });
-      pollQueue();
-    } catch (err) {
-      finishWithError(err);
-    }
-  });
-  actions.append(chip, cancel);
+  cancel.title = 'Huỷ job';
+  pause.addEventListener('click', () => control(jobId, 'pause', pause));
+  resume.addEventListener('click', () => control(jobId, 'resume', resume));
+  cancel.addEventListener('click', () => control(jobId, 'cancel', cancel));
+  actions.append(chip, pause, resume, cancel);
   head.append(title, actions);
 
   const progressTrack = document.createElement('div');
@@ -908,8 +904,20 @@ function createRow(jobId) {
   outputs.className = 'outputs';
 
   article.append(head, progressTrack, line, error, warn, outputs);
-  article._ui = { name, meta, chip, cancel, progressBar, progressTrack, line, error, warn, outputs };
+  article._ui = { name, meta, chip, pause, resume, cancel, progressBar, progressTrack, line, error, warn, outputs };
   return article;
+}
+
+async function control(jobId, action, btn) {
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/jobs/${jobId}/${action}`, { method: 'POST' });
+    if (!res.ok) throw new Error(await res.text());
+    pollQueue();
+  } catch (err) {
+    finishWithError(err);
+    btn.disabled = false;
+  }
 }
 
 function updateRow(article, job) {
@@ -918,15 +926,20 @@ function updateRow(article, job) {
   ui.name.textContent = name;
   ui.meta.textContent = `${job.id} · ${humanTime(job.total_elapsed)} · ${job.step}`;
 
-  const state = job.status === 'running' ? 'running' : job.status === 'done' ? 'done' : job.status === 'error' ? 'error' : 'queued';
+  const state = job.status === 'running' ? 'running' : job.status === 'done' ? 'done' : job.status === 'error' ? 'error' : job.status === 'paused' ? 'paused' : 'queued';
   article.dataset.state = state;
   ui.chip.dataset.state = state;
   if (state === 'running') ui.chip.textContent = `RUNNING · ${job.progress}%`;
   else if (state === 'queued') ui.chip.textContent = `CHỜ · #${job.queue_position ?? '?'}`;
+  else if (state === 'paused') ui.chip.textContent = 'TẠM DỪNG';
   else if (state === 'done') ui.chip.textContent = `DONE · ${humanTime(job.total_elapsed)}`;
   else ui.chip.textContent = 'ERROR';
 
-  ui.cancel.hidden = state === 'running';
+  ui.pause.hidden = state === 'done' || state === 'error' || state === 'paused';
+  ui.resume.hidden = state !== 'paused';
+  ui.cancel.hidden = state === 'done' || state === 'error';
+  ui.pause.disabled = false;
+  ui.resume.disabled = false;
   ui.cancel.disabled = false;
 
   const progress = Math.max(0, Math.min(100, job.progress || 0));
@@ -969,7 +982,6 @@ function renderQueue(jobs) {
   });
 
   queueCount.textContent = String(jobs.length);
-  clearAllBtn.hidden = jobs.length === 0;
 
   const running = jobs.find(job => job.status === 'running');
   const waiting = jobs.filter(job => job.status === 'queued').length;

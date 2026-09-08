@@ -42,6 +42,9 @@ class JobState:
     step_timings: dict[str, float] = field(default_factory=dict)
     translation_warnings: list[str] = field(default_factory=list)
     _current_step_start: float = field(default=0.0, repr=False)
+    pause_requested: bool = field(default=False, repr=False)
+    cancel_requested: bool = field(default=False, repr=False)
+    paused_step: str = field(default="", repr=False)
 
 
 JOBS: dict[str, JobState] = {}
@@ -152,9 +155,28 @@ def _add_file(job_id: str, kind: str, path: Path) -> None:
         job.updated_at = time.time()
 
 
+def _begin_step(job_id: str, step: str, progress: int, done_path: Path | None = None) -> str | None:
+    """Mark a step as starting. Returns None=run it, False=skip (already done), 'pause'=paused, 'cancel'=cancelled."""
+    if done_path is not None and done_path.exists():
+        return False
+    _set_step(job_id, step, progress)
+    with JOBS_LOCK:
+        job = JOBS[job_id]
+        if job.cancel_requested:
+            return "cancel"
+        if job.pause_requested:
+            job.status = "paused"
+            job.paused_step = step
+            return "pause"
+    return None
+
+
 def _job_payload(job: JobState) -> dict:
     payload = asdict(job)
     payload.pop("_current_step_start", None)
+    payload.pop("pause_requested", None)
+    payload.pop("cancel_requested", None)
+    payload.pop("paused_step", None)
     payload["downloads"] = {
         name: f"/api/jobs/{job.id}/download/{name}"
         for name, path in job.files.items()
@@ -318,34 +340,66 @@ def get_queue():
     return {"jobs": [payloads[jid] for jid in order], "running": running}
 
 
-@app.delete("/api/jobs/{job_id}")
-def delete_job(job_id: str):
-    position = _queue_position(job_id)
-    if position == 0:
-        raise HTTPException(status_code=409, detail="Job is running and cannot be deleted.")
+def _job_status(job_id: str) -> str | None:
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        return job.status if job else None
+
+
+@app.post("/api/jobs/{job_id}/pause")
+def pause_job(job_id: str):
+    status = _job_status(job_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if status == "paused":
+        return {"ok": True, "status": "paused"}
     with QUEUE_LOCK:
         if job_id in QUEUE_PENDING:
             QUEUE_PENDING.remove(job_id)
-    if not _delete_job(job_id):
-        raise HTTPException(status_code=404, detail="Job not found")
-    return {"ok": True}
-
-
-@app.post("/api/jobs/clear")
-def clear_jobs():
-    with QUEUE_LOCK:
-        pending = list(QUEUE_PENDING)
-        QUEUE_PENDING.clear()
-    deleted = 0
-    for jid in pending:
-        if _delete_job(jid):
-            deleted += 1
     with JOBS_LOCK:
-        finished = [jid for jid, j in JOBS.items() if j.status in {"done", "error"}]
-    for jid in finished:
-        if _delete_job(jid):
-            deleted += 1
-    return {"ok": True, "deleted": deleted}
+        job = JOBS[job_id]
+        if job.status == "running":
+            job.pause_requested = True
+            job.updated_at = time.time()
+            return {"ok": True, "status": "running"}
+        job.status = "paused"
+        job.step = "Paused"
+        job.updated_at = time.time()
+    return {"ok": True, "status": "paused"}
+
+
+@app.post("/api/jobs/{job_id}/resume")
+def resume_job(job_id: str):
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        if job.status == "paused":
+            job.status = "queued"
+            job.pause_requested = False
+            job.step = "Waiting"
+            job.updated_at = time.time()
+    if job.status == "queued":
+        _enqueue_job(job_id)
+    return {"ok": True, "status": job.status}
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+def cancel_job(job_id: str):
+    status = _job_status(job_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if status == "running":
+        with JOBS_LOCK:
+            JOBS[job_id].cancel_requested = True
+            JOBS[job_id].updated_at = time.time()
+        return {"ok": True, "status": "cancelling"}
+    with QUEUE_LOCK:
+        if job_id in QUEUE_PENDING:
+            QUEUE_PENDING.remove(job_id)
+    if _delete_job(job_id):
+        return {"ok": True, "status": "cancelled"}
+    raise HTTPException(status_code=404, detail="Job not found")
 
 
 @app.get("/api/jobs/{job_id}/download/{kind}")
@@ -379,15 +433,6 @@ def _run_job(job_id: str) -> None:
         opts = dict(job.options)
 
     job_dir = input_path.parent
-    video_url = opts.get("video_url", "")
-    if video_url:
-        _set_step(job_id, "Downloading video from YouTube", 10)
-        with JOBS_LOCK:
-            JOBS[job_id].status = "running"
-        input_path, source_title = download_video(video_url, job_dir)
-        _add_file(job_id, "input", input_path)
-        _set_job(job_id, options={**opts, "original_stem": source_title})
-
     audio_path = job_dir / "audio.wav"
     original_srt = job_dir / "original.srt"
     vi_srt = job_dir / "vi.srt"
@@ -397,78 +442,108 @@ def _run_job(job_id: str) -> None:
     output_burned_video = job_dir / f"{input_stem}_vi_burned.mp4"
 
     try:
-        _set_step(job_id, "Extracting audio", 15)
         with JOBS_LOCK:
             JOBS[job_id].status = "running"
-        extract_audio(input_path, audio_path)
-        _add_file(job_id, "audio", audio_path)
+            JOBS[job_id].pause_requested = False
 
-        _set_step(job_id, "Transcribing audio to SRT", 35)
-        transcriber = FasterWhisperTranscriber(
-            model_name=opts["whisper_model"],
-            device=opts.get("whisper_device"),
-            compute_type=opts.get("whisper_compute_type") or None,
-        )
-        original_blocks = transcriber.transcribe_to_srt(
-            audio_path,
-            original_srt,
-        )
-        _add_file(job_id, "original_srt", original_srt)
+        video_url = opts.get("video_url", "")
+        if video_url:
+            state = _begin_step(job_id, "Downloading video from YouTube", 10, input_path if input_path.exists() else None)
+            if state is None:
+                input_path, source_title = download_video(video_url, job_dir)
+                _add_file(job_id, "input", input_path)
+                _set_job(job_id, options={**opts, "original_stem": source_title})
+            elif state in ("pause", "cancel"):
+                return _finish_control(job_id, state)
+
+        state = _begin_step(job_id, "Extracting audio", 15, audio_path)
+        if state is None:
+            extract_audio(input_path, audio_path)
+            _add_file(job_id, "audio", audio_path)
+        elif state in ("pause", "cancel"):
+            return _finish_control(job_id, state)
+
+        state = _begin_step(job_id, "Transcribing audio to SRT", 35, original_srt)
+        if state is None:
+            transcriber = FasterWhisperTranscriber(
+                model_name=opts["whisper_model"],
+                device=opts.get("whisper_device"),
+                compute_type=opts.get("whisper_compute_type") or None,
+            )
+            original_blocks = transcriber.transcribe_to_srt(audio_path, original_srt)
+            _add_file(job_id, "original_srt", original_srt)
+        elif state in ("pause", "cancel"):
+            return _finish_control(job_id, state)
+        else:
+            original_blocks = parse_srt(original_srt.read_text(encoding="utf-8"))
 
         subtitle_for_export = original_srt
         if opts.get("translate", "true") == "true" and original_blocks:
-            _set_step(job_id, "Translating subtitles to Vietnamese", 65)
-            provider = opts.get("translation_provider", "google")
-            if provider == "envit5":
-                translator = EnViT5Translator(device=opts.get("translate_device", "cpu"))
-            elif provider == "huggingface":
-                translator = HuggingFaceTranslator(device=opts.get("translate_device", "cpu"))
+            state = _begin_step(job_id, "Translating subtitles to Vietnamese", 65, vi_srt if vi_srt.exists() else None)
+            if state is None:
+                provider = opts.get("translation_provider", "google")
+                if provider == "envit5":
+                    translator = EnViT5Translator(device=opts.get("translate_device", "cpu"))
+                elif provider == "huggingface":
+                    translator = HuggingFaceTranslator(device=opts.get("translate_device", "cpu"))
+                else:
+                    translator = GoogleTranslator()
+                vi_blocks = translator.translate_blocks(
+                    original_blocks, source_lang="en", target_lang=opts["target_lang"]
+                )
+                if translator.warnings:
+                    _set_job(job_id, translation_warnings=list(translator.warnings))
+                vi_srt.write_text(write_srt(vi_blocks), encoding="utf-8")
+                subtitle_for_export = vi_srt
+                _add_file(job_id, "vi_srt", vi_srt)
+            elif state in ("pause", "cancel"):
+                return _finish_control(job_id, state)
             else:
-                translator = GoogleTranslator()
+                subtitle_for_export = vi_srt
 
-            vi_blocks = translator.translate_blocks(
-                original_blocks,
-                source_lang="en",
-                target_lang=opts["target_lang"],
-            )
-            if translator.warnings:
-                _set_job(job_id, translation_warnings=list(translator.warnings))
-            vi_srt.write_text(write_srt(vi_blocks), encoding="utf-8")
-            subtitle_for_export = vi_srt
-            _add_file(job_id, "vi_srt", vi_srt)
-
-        _set_step(job_id, "Muxing soft subtitles", 80)
-        mux_soft_subtitles(input_path, subtitle_for_export, output_video)
-        _add_file(job_id, "output_video", output_video)
+        state = _begin_step(job_id, "Muxing soft subtitles", 80, output_video)
+        if state is None:
+            mux_soft_subtitles(input_path, subtitle_for_export, output_video)
+            _add_file(job_id, "output_video", output_video)
+        elif state in ("pause", "cancel"):
+            return _finish_control(job_id, state)
 
         if opts.get("dub", "false") == "true" and subtitle_for_export.exists():
             tts_label = "VieNeu-TTS" if opts.get("tts_provider", "edge") == "vieneu" else "Edge-TTS"
-            _set_step(job_id, f"Generating Vietnamese voice-over ({tts_label})", 90)
-            dub_blocks = parse_srt(subtitle_for_export.read_text(encoding="utf-8"))
-            bg_vol = float(opts.get("background_volume", "0.15"))
-            vc_vol = float(opts.get("voice_volume", "1.0"))
-            create_vietnamese_dub(
-                output_video,
-                dub_blocks,
-                job_dir,
-                output_dubbed_video,
-                voice=opts.get("tts_voice", "vi-VN-HoaiMyNeural"),
-                background_volume=bg_vol,
-                voice_volume=vc_vol,
-                tts_provider=opts.get("tts_provider", "edge"),
-            )
-            _add_file(job_id, "output_dubbed_video", output_dubbed_video)
+            state = _begin_step(job_id, f"Generating Vietnamese voice-over ({tts_label})", 90, output_dubbed_video)
+            if state is None:
+                dub_blocks = parse_srt(subtitle_for_export.read_text(encoding="utf-8"))
+                bg_vol = float(opts.get("background_volume", "0.15"))
+                vc_vol = float(opts.get("voice_volume", "1.0"))
+                create_vietnamese_dub(
+                    output_video, dub_blocks, job_dir, output_dubbed_video,
+                    voice=opts.get("tts_voice", "vi-VN-HoaiMyNeural"),
+                    background_volume=bg_vol, voice_volume=vc_vol,
+                    tts_provider=opts.get("tts_provider", "edge"),
+                )
+                _add_file(job_id, "output_dubbed_video", output_dubbed_video)
+            elif state in ("pause", "cancel"):
+                return _finish_control(job_id, state)
 
         if opts.get("export_mode") == "burn":
-            _set_step(job_id, "Burning subtitles into video", 96)
-            burn_source = output_dubbed_video if opts.get("dub", "false") == "true" else input_path
-            burn_subtitles(burn_source, subtitle_for_export, output_burned_video)
-            _add_file(job_id, "output_burned_video", output_burned_video)
+            state = _begin_step(job_id, "Burning subtitles into video", 96, output_burned_video)
+            if state is None:
+                burn_source = output_dubbed_video if opts.get("dub", "false") == "true" else input_path
+                burn_subtitles(burn_source, subtitle_for_export, output_burned_video)
+                _add_file(job_id, "output_burned_video", output_burned_video)
+            elif state in ("pause", "cancel"):
+                return _finish_control(job_id, state)
 
         _set_step(job_id, "Done", 100)
         _set_job(job_id, status="done")
     except Exception as exc:
         _set_job(job_id, status="error", step="Failed", error=str(exc))
+
+
+def _finish_control(job_id: str, state: str) -> None:
+    if state == "cancel":
+        _delete_job(job_id)
+    # paused: leave job in JOBS with status=paused for later resume
 
 
 def main():
