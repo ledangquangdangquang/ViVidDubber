@@ -9,7 +9,7 @@ video -> audio -> phụ đề gốc (Whisper) -> dịch sang Việt -> lồng ti
 ## Tính năng
 
 - **Speech-to-Text**: Nhận diện giọng nói bằng Faster-Whisper (chạy offline, không tốn phí).
-- **Dịch thuật**: 4 lựa chọn — Google Translate (miễn phí), Ollama Local LLM, HuggingFace Hy-MT2-1.8B (trực tiếp, không cần Ollama), hoặc EnViT5 offline (Transformers).
+- **Dịch thuật**: 3 lựa chọn — Google Translate (miễn phí), HuggingFace Hy-MT2-1.8B (trực tiếp, có thể load GGUF qua env), hoặc EnViT5 offline (Transformers).
 - **Thuyết minh AI (TTS)**: Edge-TTS (online, Microsoft Neural) hoặc VieNeu-TTS (offline, 23 giọng Việt).
 - **Xử lý Video**: Tự động khớp timeline âm thanh (atempo), burn phụ đề hoặc mux soft sub bằng FFmpeg.
 - **Không phụ thuộc API trả phí hay Supertonic ONNX cồng kềnh.**
@@ -58,41 +58,23 @@ Tải video lên, chọn tùy chọn (provider dịch, lồng tiếng, burn ph�
 
 Chọn "Translation provider" trong giao diện web trước khi tạo job:
 
-| | Google Translate | Ollama (Hy-MT2-1.8B) | HuggingFace Hy-MT2-1.8B | EnViT5 |
-|---|---|---|---|---|
-| **Cần API key** | Không | Không | Không | Không |
-| **Cần internet khi chạy** | Có | Không | Không | Không |
-| **Cài đặt** | Không cần | Cài Ollama + pull model | Tự động (tải model lần đầu) | Tự động (tải model lần đầu) |
-| **Dung lượng tải** | 0 | ~1.1 GB (qua Ollama) | ~3.5 GB | ~2.1 GB |
-| **Chất lượng dịch** | Tốt | Tốt nhất (1.8B LLM) | Tốt nhất (1.8B LLM) | Khá (T5 base) |
-| **Tốc độ** | Nhanh (online) | Chậm nhất (LLM lớn) | Chậm (LLM lớn) | Nhanh (T5, GPU) |
-| **Phù hợp** | Máy luôn online | Máy offline, cần chất lượng cao | Máy offline, không muốn cài Ollama | Máy offline, cần tốc độ |
+| | Google Translate | HuggingFace Hy-MT2-1.8B | EnViT5 |
+|---|---|---|---|
+| **Cần API key** | Không | Không | Không |
+| **Cần internet khi chạy** | Có | Không | Không |
+| **Cài đặt** | Không cần | Tự động (tải model lần đầu) | Tự động (tải model lần đầu) |
+| **Dung lượng tải** | 0 | ~3.5 GB | ~2.1 GB |
+| **Chất lượng dịch** | Tốt | Tốt nhất (1.8B LLM) | Khá (T5 base) |
+| **Tốc độ** | Nhanh (online) | Chậm (LLM lớn) | Nhanh (T5, GPU) |
+| **Phù hợp** | Máy luôn online | Máy offline, chất lượng cao | Máy offline, cần tốc độ |
 
 ### 1. Google Translate (mặc định)
 
 Không cần cài đặt gì — chỉ cần internet. Đây là lựa chọn nhanh nhất để bắt đầu.
 
-### 2. Ollama — LLM cục bộ
+### 2. HuggingFace Hy-MT2-1.8B — trực tiếp
 
-```bash
-# 1. Cài Ollama: https://ollama.com/download
-# 2. Khởi động & tải model dịch Anh-Việt:
-ollama serve &                        # hoặc chạy app Ollama
-ollama pull hf.co/tencent/Hy-MT2-1.8B-GGUF:Q4_K_M
-# 3. Restart app, chọn "Ollama local" trong giao diện
-```
-
-Biến môi trường (tùy chọn):
-
-| Biến | Mặc định | Mô tả |
-|---|---|---|
-| `OLLAMA_MODEL` | `hf.co/tencent/Hy-MT2-1.8B-GGUF:Q4_K_M` | Model dùng để dịch |
-| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Địa chỉ Ollama server |
-| `OLLAMA_TRANSLATE_BATCH_SIZE` | `20` | Số dòng dịch mỗi lần gọi |
-
-### 3. HuggingFace Hy-MT2-1.8B — trực tiếp, không cần Ollama
-
-Chạy model dịch Anh-Việt `tencent/Hy-MT2-1.8B` trực tiếp từ HuggingFace bằng Transformers (không cần Ollama server). Tải model tự động (~3.5 GB) vào lần dùng đầu:
+Chạy model dịch Anh-Việt `tencent/Hy-MT2-1.8B` trực tiếp bằng Transformers (có thể load bản GGUF `tencent/Hy-MT2-1.8B-GGUF` để giảm VRAM qua `HF_TRANSLATE_REPO`). Tải model tự động (~3.5 GB) vào lần dùng đầu: chọn "HuggingFace Hy-MT2-1.8B" trong giao diện. Trước kia để chạy model này cần cài thêm server Ollama; giờ không cần — bỏ Ollama, chỉ dùng HuggingFace trực tiếp.
 
 ```bash
 # Chỉ cần chọn "HuggingFace Hy-MT2-1.8B" trong giao diện, lần đầu sẽ tải model
@@ -108,7 +90,7 @@ Biến môi trường (tùy chọn):
 
 > Lưu ý: 1.8B nhẹ (~3.4 GB VRAM khi float16) vừa GPU 4 GB như RTX 3050. Chọn "Chạy dịch trên: GPU" trong UI để dùng CUDA.
 
-### 4. EnViT5 — offline Transformers
+### 3. EnViT5 — offline Transformers
 
 Chạy hoàn toàn offline bằng model `VietAI/envit5-translation`. Tải model tự động (~2.1 GB) vào lần dùng đầu — chạy GPU nếu có CUDA, ngược lại fallback CPU. Không cần cài đặt gì thêm:
 
@@ -184,15 +166,15 @@ Biến môi trường (tùy chọn):
 - `GET /api/jobs/{id}` — trạng thái job
 - `DELETE /api/jobs/{id}` — xóa job (job đang chạy → 409)
 - `GET /api/jobs/{id}/download/{kind}` — tải kết quả
-- `GET /api/config` — cấu hình & kiểm tra Ollama
+- `GET /api/config` — cấu hình & danh sách provider dịch
 
 ## Câu hỏi thường gặp
 
 **Dịch bị sót dòng (giữ nguyên tiếng Anh)?**
-Mỗi dòng lỗi sẽ xuất hiện "Cảnh báo" trong kết quả job. Nguyên nhân phổ biến: Google rate-limit (mạng chậm) hoặc Ollama hết context. Dòng lỗi sẽ tự dịch lại riêng lẻ; nếu vẫn lỗi thì giữ bản gốc tiếng Anh thay vì dịch sai.
+Mỗi dòng lỗi sẽ xuất hiện "Cảnh báo" trong kết quả job. Nguyên nhân phổ biến: Google rate-limit (mạng chậm). Dòng lỗi sẽ tự dịch lại riêng lẻ; nếu vẫn lỗi thì giữ bản gốc tiếng Anh thay vì dịch sai.
 
 **Muốn dùng model dịch hay hơn?**
-Đổi `OLLAMA_MODEL` sang bản lớn hơn (ví dụ bản Q6_K hay full precision) — chậm hơn nhưng chất lượng tốt hơn.
+Đổi `HF_TRANSLATE_REPO` sang bản model Hy-MT2 lớn hơn (ví dụ `tencent/Hy-MT2-7B`) — chậm hơn nhưng chất lượng tốt hơn.
 
 **File quá lớn?**
 Giới hạn upload 2 GB mỗi file, tối đa 50 jobs, file kết quả tự xóa sau 6 tiếng.

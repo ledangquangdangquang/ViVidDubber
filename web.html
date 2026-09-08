@@ -471,13 +471,12 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
 
         <div class="field">
           <label for="translationProvider">Translation provider</label>
-          <select id="translationProvider" name="translation_provider">
+           <select id="translationProvider" name="translation_provider">
              <option value="google" selected>Google Translate (free)</option>
-             <option value="ollama">Ollama local</option>
-             <option value="envit5">EnViT5 (offline GPU)</option>
              <option value="huggingface">HuggingFace Hy-MT2-1.8B</option>
-           </select>
-           <span class="field-help" id="translationProviderHelp">Google Translate free, không cần API key</span>
+             <option value="envit5">EnViT5 (offline GPU)</option>
+          </select>
+          <span class="field-help" id="translationProviderHelp">Google Translate free, không cần API key</span>
         </div>
 
         <div class="field">
@@ -486,7 +485,7 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
             <option value="cpu" selected>CPU</option>
             <option value="cuda">GPU (CUDA)</option>
           </select>
-          <span class="field-help" id="translateDeviceHelp">Áp dụng cho EnViT5 và Hy-MT2. Google/Ollama theo cấu hình riêng.</span>
+          <span class="field-help" id="translateDeviceHelp">Áp dụng cho EnViT5 và Hy-MT2. Google theo cấu hình riêng.</span>
         </div>
 
         <input type="hidden" id="targetLang" name="target_lang" value="vi">
@@ -1035,18 +1034,6 @@ function updateTranslationProviderUi() {
     configNote.textContent = 'Google Translate online · không cần cài đặt · nhanh, chính xác';
     serverStatus.textContent = 'GOOGLE TRANSLATE';
     serverStatus.dataset.state = 'ready';
-    return;
-  }
-  if (translationProvider.value === 'ollama') {
-    const ready = serverConfig.ollama_available && serverConfig.ollama_model_available;
-    translationProviderHelp.textContent = ready
-      ? `Local model sẵn sàng: ${serverConfig.ollama_model}`
-      : `Cần chạy: ollama pull ${serverConfig.ollama_model}`;
-    configNote.textContent = ready
-      ? `Ollama local: ${serverConfig.ollama_model} · không cần API key · output: burned MP4`
-      : `Ollama chưa có model ${serverConfig.ollama_model}. Tải model rồi refresh trang.`;
-    serverStatus.textContent = ready ? 'OLLAMA READY' : 'OLLAMA SETUP';
-    serverStatus.dataset.state = ready ? 'ready' : 'error';
     return;
   }
    if (translationProvider.value === 'envit5') {

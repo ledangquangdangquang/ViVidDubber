@@ -11,7 +11,7 @@ video -> audio -> original subtitles (Whisper) -> translate to Vietnamese -> voi
 ## Features
 
 - **Speech-to-Text**: Faster-Whisper transcription, runs offline for free.
-- **Translation**: 4 options — Google Translate (free), Ollama local LLM, HuggingFace Hy-MT2-1.8B (direct, no Ollama), or EnViT5 offline (Transformers).
+- **Translation**: 3 options — Google Translate (free), HuggingFace Hy-MT2-1.8B (direct, can load GGUF via env), or EnViT5 offline (Transformers).
 - **AI Voice-over (TTS)**: Edge-TTS (online, Microsoft Neural) or VieNeu-TTS (offline, 23 Vietnamese voices).
 - **Video processing**: Automatic timeline alignment (atempo), burn subtitles or mux soft subs with FFmpeg.
 - **No paid APIs, no heavy Supertonic ONNX.**
@@ -60,41 +60,23 @@ Upload a video, pick your options (translation provider, voice-over, burn subtit
 
 Pick "Translation provider" in the web UI before creating a job:
 
-| | Google Translate | Ollama (Hy-MT2-1.8B) | HuggingFace Hy-MT2-1.8B | EnViT5 |
-|---|---|---|---|---|
-| **API key** | None | None | None | None |
-| **Internet while running** | Yes | No | No | No |
-| **Setup** | None | Install Ollama + pull model | Automatic (first-run download) | Automatic (first-run download) |
-| **Download size** | 0 | ~1.1 GB (via Ollama) | ~3.5 GB | ~2.1 GB |
-| **Translation quality** | Good | Best (1.8B LLM) | Best (1.8B LLM) | OK (T5 base) |
-| **Speed** | Fast (online) | Slowest (large LLM) | Slow (large LLM) | Fast (T5, GPU) |
-| **Best for** | Always-online machines | Offline, highest quality | Offline, no Ollama install | Offline, speed matters |
+| | Google Translate | HuggingFace Hy-MT2-1.8B | EnViT5 |
+|---|---|---|---|
+| **API key** | None | None | None |
+| **Internet while running** | Yes | No | No |
+| **Setup** | None | Automatic (first-run download) | Automatic (first-run download) |
+| **Download size** | 0 | ~3.5 GB | ~2.1 GB |
+| **Translation quality** | Good | Best (1.8B LLM) | OK (T5 base) |
+| **Speed** | Fast (online) | Slow (large LLM) | Fast (T5, GPU) |
+| **Best for** | Always-online machines | Offline, highest quality | Offline, speed matters |
 
 ### 1. Google Translate (default)
 
 No setup — just internet. The fastest way to get started.
 
-### 2. Ollama — local LLM
+### 2. HuggingFace Hy-MT2-1.8B — direct
 
-```bash
-# 1. Install Ollama: https://ollama.com/download
-# 2. Start and pull the English-Vietnamese translation model:
-ollama serve &                        # or run the Ollama app
-ollama pull hf.co/tencent/Hy-MT2-1.8B-GGUF:Q4_K_M
-# 3. Restart the app, pick "Ollama local" in the UI
-```
-
-Environment variables (optional):
-
-| Variable | Default | Description |
-|---|---|---|
-| `OLLAMA_MODEL` | `hf.co/tencent/Hy-MT2-1.8B-GGUF:Q4_K_M` | Model used for translation |
-| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama server address |
-| `OLLAMA_TRANSLATE_BATCH_SIZE` | `20` | Lines translated per call |
-
-### 3. HuggingFace Hy-MT2-1.8B — direct, no Ollama
-
-Runs `tencent/Hy-MT2-1.8B` directly with Transformers (no Ollama server). Downloads the model automatically (~3.5 GB) on first use, then runs fully offline:
+Runs `tencent/Hy-MT2-1.8B` directly with Transformers (Transformers can also load a GGUF repo like `tencent/Hy-MT2-1.8B-GGUF` for lower VRAM via `HF_TRANSLATE_REPO`). Downloads the model automatically (~3.5 GB) on first use, then runs fully offline. Previously this model required installing a separate Ollama server; that dependency is removed now — just pick "HuggingFace Hy-MT2-1.8B" in the UI. The model downloads on first run:
 
 ```bash
 # Just pick "HuggingFace Hy-MT2-1.8B" in the UI; the model downloads on first run
@@ -110,7 +92,7 @@ Environment variables (optional):
 
 > Note: a CUDA GPU makes loading/warming faster; CPU works but is slower (1.8B is a small LLM, fits 4 GB VRAM).
 
-### 4. EnViT5 — offline Transformers
+### 3. EnViT5 — offline Transformers
 
 Fully offline with `VietAI/envit5-translation`. Downloads the model automatically (~2.1 GB) on first use — runs on GPU if CUDA is available, falls back to CPU. Nothing extra to install:
 
@@ -186,15 +168,15 @@ Environment variables (optional):
 - `GET /api/jobs/{id}` — job status
 - `DELETE /api/jobs/{id}` — delete a job (running job → 409)
 - `GET /api/jobs/{id}/download/{kind}` — download a result
-- `GET /api/config` — config & Ollama reachability check
+- `GET /api/config` — config & translation provider list
 
 ## FAQ
 
 **Lines stay in English (not translated)?**
-Each failed line shows up as a "Cảnh báo" (warning) in the job result. Common causes: Google rate-limit (slow network) or Ollama running out of context. Failed lines are retried individually; if they still fail, the original English is kept instead of a wrong translation.
+Each failed line shows up as a "Cảnh báo" (warning) in the job result. Common cause: Google rate-limit (slow network). Failed lines are retried individually; if they still fail, the original English is kept instead of a wrong translation.
 
 **Want a better translation model?**
-Switch `OLLAMA_MODEL` to a larger quant (e.g. Q6_K or full precision) — slower but higher quality.
+Switch `HF_TRANSLATE_REPO` to a larger Hy-MT2 (e.g. `tencent/Hy-MT2-7B`) — slower but higher quality.
 
 **File too large?**
 Limit is 2 GB per upload, max 50 jobs, and result files are auto-deleted after 6 hours.

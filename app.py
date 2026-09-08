@@ -3,13 +3,11 @@ from __future__ import annotations
 import argparse
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, field
-import json
 import os
 from pathlib import Path
 import shutil
 import threading
 import time
-import urllib.request
 import uuid
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -26,7 +24,7 @@ JOB_TTL_SECONDS = 3600 * 6  # 6 hours
 from pipeline.media import burn_subtitles, download_video, extract_audio, mux_soft_subtitles, resolve_video_urls
 from pipeline.subtitle import parse_srt, write_srt
 from pipeline.transcribe import FasterWhisperTranscriber
-from pipeline.translate import EnViT5Translator, GoogleTranslator, HuggingFaceTranslator, OllamaTranslator
+from pipeline.translate import EnViT5Translator, GoogleTranslator, HuggingFaceTranslator
 from pipeline.tts import create_vietnamese_dub
 
 
@@ -175,18 +173,6 @@ def _safe_suffix(filename: str) -> str:
     return suffix if suffix in {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"} else ".mp4"
 
 
-def _ollama_status() -> tuple[bool, bool, str | None]:
-    base_url = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
-    model = os.environ.get("OLLAMA_MODEL", "hf.co/tencent/Hy-MT2-1.8B-GGUF:Q4_K_M")
-    try:
-        with urllib.request.urlopen(f"{base_url}/api/tags", timeout=2) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-        available_models = {item.get("name") for item in payload.get("models", [])}
-        return True, model in available_models, None
-    except Exception as exc:
-        return False, False, str(exc)
-
-
 @app.get("/", response_class=HTMLResponse)
 def index():
     return (_DIR / "web.html").read_text(encoding="utf-8")
@@ -204,13 +190,7 @@ def favicon():
 
 @app.get("/api/config")
 def config():
-    ollama_available, ollama_model_available, ollama_error = _ollama_status()
-    return {
-        "ollama_available": ollama_available,
-        "ollama_model_available": ollama_model_available,
-        "ollama_model": os.environ.get("OLLAMA_MODEL", "hf.co/tencent/Hy-MT2-1.8B-GGUF:Q4_K_M"),
-        "ollama_error": ollama_error,
-    }
+    return {"ok": True, "translation_providers": ["google", "huggingface", "envit5"]}
 
 
 @app.post("/api/resolve")
@@ -245,7 +225,7 @@ async def create_job(
 ):
     if export_mode not in {"soft", "burn"}:
         raise HTTPException(status_code=400, detail="Unsupported subtitle export mode.")
-    if translation_provider not in {"google", "ollama", "envit5", "huggingface"}:
+    if translation_provider not in {"google", "envit5", "huggingface"}:
         raise HTTPException(status_code=400, detail="Unsupported translation provider.")
     if not file and not video_url.strip():
         raise HTTPException(status_code=400, detail="Provide a video file or a YouTube URL.")
@@ -422,9 +402,7 @@ def _run_job(job_id: str) -> None:
         if opts.get("translate", "true") == "true" and original_blocks:
             _set_step(job_id, "Translating subtitles to Vietnamese", 65)
             provider = opts.get("translation_provider", "google")
-            if provider == "ollama":
-                translator = OllamaTranslator()
-            elif provider == "envit5":
+            if provider == "envit5":
                 translator = EnViT5Translator(device=opts.get("translate_device", "cpu"))
             elif provider == "huggingface":
                 translator = HuggingFaceTranslator(device=opts.get("translate_device", "cpu"))

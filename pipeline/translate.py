@@ -6,7 +6,6 @@ import re
 import time
 import urllib.parse
 import urllib.request
-from urllib import error, request
 
 from .subtitle import SubtitleBlock
 
@@ -182,114 +181,6 @@ class GoogleTranslator:
             candidate += [""] * (expected - len(candidate))
             return candidate
         return None
-
-
-_OLLAMA_SYSTEM_PROMPT = (
-    "You are a professional subtitle translator. "
-    "Keep each line short and concise for subtitle timing. "
-    "Output ONLY the translation text for each line, one per line. "
-    "Do NOT repeat the line number in the translation text. "
-    "No prefixes, no numbers, no extra text."
-)
-
-
-class OllamaTranslator(_BatchTranslator):
-    def __init__(self, model: str | None = None, base_url: str | None = None):
-        self.model = model or os.environ.get("OLLAMA_MODEL", "hf.co/tencent/Hy-MT2-1.8B-GGUF:Q4_K_M")
-        self.base_url = (base_url or os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")).rstrip("/")
-        self.batch_size = int(os.environ.get("OLLAMA_TRANSLATE_BATCH_SIZE", "20"))
-        self.warnings: list[str] = []
-
-    def _translate_texts(self, texts: list[str], source_lang: str, target_lang: str) -> list[str]:
-        src_name = _lang_name(source_lang)
-        tgt_name = _lang_name(target_lang)
-        if len(texts) == 1:
-            prompt = f"Translate from {src_name} to {tgt_name}. Keep it short.\n\n{texts[0]}"
-        else:
-            numbered = "\n".join(f"{i+1}. {t}" for i, t in enumerate(texts))
-            prompt = f"Translate from {src_name} to {tgt_name}. Short.\n\n{numbered}"
-
-        payload = {
-            "model": self.model,
-            "stream": False,
-            "options": {"temperature": 0.1, "num_ctx": 4096},
-            "messages": [
-                {"role": "system", "content": _OLLAMA_SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-        }
-        req = request.Request(
-            f"{self.base_url}/api/chat",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json", "Accept": "application/json"},
-            method="POST",
-        )
-        return self._send_with_retry(req, expected=len(texts))
-
-    @staticmethod
-    def _parse_lines(content: str, expected: int) -> list[str]:
-        numbered_re = re.compile(r"^\d+[\.\)]\s+")
-        leading_digits_re = re.compile(r"^\d+\s+")
-        lines = [l.strip() for l in content.split("\n") if l.strip()]
-
-        parsed = []
-        for line in lines:
-            m = numbered_re.match(line)
-            if m:
-                t = line[m.end():].strip()
-            else:
-                t = leading_digits_re.sub("", line).strip()
-            if t:
-                parsed.append(t)
-
-        if len(parsed) == expected:
-            return parsed
-        if len(parsed) > expected:
-            return parsed[:expected]
-        if len(parsed) < expected:
-            parsed += [""] * (expected - len(parsed))
-            return parsed
-
-        parsed.clear()
-        for line in lines:
-            cleaned = numbered_re.sub("", line).strip()
-            cleaned = leading_digits_re.sub("", cleaned).strip()
-            if cleaned:
-                parsed.append(cleaned)
-
-        if len(parsed) == expected:
-            return parsed
-        if len(parsed) > expected:
-            return parsed[:expected]
-        parsed += [""] * (expected - len(parsed))
-        return parsed
-
-    def _send_with_retry(self, req: request.Request, expected: int = 1) -> list[str]:
-        last_detail = ""
-        for attempt in range(4):
-            try:
-                with request.urlopen(req, timeout=300) as response:
-                    data = json.loads(response.read().decode("utf-8"))
-                content = data.get("message", {}).get("content", "").strip()
-                return self._parse_lines(content, expected)
-            except error.HTTPError as exc:
-                detail = exc.read().decode("utf-8", errors="replace")
-                last_detail = f"Ollama API error {exc.code}: {detail}"
-                if exc.code != 429 or attempt == 3:
-                    raise TranslationError(last_detail) from exc
-                time.sleep(5 * (attempt + 1))
-            except error.URLError as exc:
-                if attempt == 3:
-                    raise TranslationError(
-                        f"Could not reach Ollama at {self.base_url}. Start it with `ollama serve`."
-                    ) from exc
-                time.sleep(5 * (attempt + 1))
-            except Exception as exc:
-                last_detail = f"Unexpected Ollama response: {exc}"
-                if attempt == 3:
-                    raise TranslationError(last_detail) from exc
-                time.sleep(3)
-        raise TranslationError(last_detail or "Ollama request failed")
 
 
 class EnViT5Translator(_BatchTranslator):
