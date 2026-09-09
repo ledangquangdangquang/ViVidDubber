@@ -20,7 +20,7 @@ video -> audio -> original subtitles (Whisper) -> translate to Vietnamese -> voi
 
 | Component | Required | Notes |
 |---|---|---|
-| Python | ✔ | ≥ 3.10 |
+| Python | ✔ | ≥ 3.10, < 3.14 |
 | [uv](https://docs.astral.sh/uv/) | ✔ | Package + virtualenv management |
 | [ffmpeg](https://ffmpeg.org/) | ✔ | Video/audio processing |
 | NVIDIA GPU (CUDA) | ✖ | Recommended — speeds up Whisper & EnViT5; CPU works but slower |
