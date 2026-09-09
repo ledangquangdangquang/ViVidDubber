@@ -1,10 +1,23 @@
 # Vietnamese AI Video Dubber
 
+Fully local, fully free — no API keys, no paid services, no cloud dependencies. Everything runs on your own machine (offline mode available with all-local models).
+
 Automatic subtitle translation and Vietnamese voice-over for foreign-language videos (mostly English).
 
 ```text
 video -> audio -> original subtitles (Whisper) -> translate to Vietnamese -> voice-over (Edge-TTS / VieNeu-TTS) -> MP4 with Vietnamese subtitles
 ```
+
+### Performance
+
+Tested on a standard GPU. Both runs include transcription, translation, voice-over, and MP4 muxing.
+
+| Input video | Processing time | Ratio | Speed vs. playback |
+|---|---|---|---|
+| 12 min 23 s | 15 min 25 s | 1.23× realtime | ~23 % slower than live |
+| 21 min 26 s | 30 min 41 s | 1.43× realtime | ~43 % slower than live |
+
+Cost: **$0** — no paid APIs or cloud services required.
 
 > Tiếng Việt: xem [README_vi.md](README_vi.md)
 
