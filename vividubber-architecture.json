@@ -1,0 +1,238 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "ViVidDubber Architecture",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1200,
+      950
+    ]
+  },
+  "layout": {
+    "mode": "grid",
+    "cols": 3,
+    "gapX": 80,
+    "gapY": 90,
+    "cellW": 220,
+    "cellH": 140
+  },
+  "components": [
+    {
+      "id": "client",
+      "type": "frontend",
+      "label": "Web UI",
+      "sublabel": "web.html",
+      "pos": [
+        500,
+        30
+      ],
+      "size": [
+        140,
+        45
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "FastAPI",
+      "sublabel": "app.py",
+      "pos": [
+        500,
+        150
+      ],
+      "size": [
+        140,
+        45
+      ]
+    },
+    {
+      "id": "queue",
+      "type": "backend",
+      "label": "Job Queue",
+      "sublabel": "worker",
+      "pos": [
+        500,
+        270
+      ],
+      "size": [
+        140,
+        45
+      ]
+    },
+    {
+      "id": "media",
+      "type": "backend",
+      "label": "Media Pipeline",
+      "sublabel": "media.py",
+      "pos": [
+        500,
+        390
+      ],
+      "size": [
+        150,
+        45
+      ]
+    },
+    {
+      "id": "transcribe",
+      "type": "backend",
+      "label": "Whisper",
+      "sublabel": "faster-whisper",
+      "pos": [
+        120,
+        350
+      ],
+      "size": [
+        140,
+        45
+      ]
+    },
+    {
+      "id": "subtitle",
+      "type": "backend",
+      "label": "Subtitle",
+      "sublabel": "subtitle.py",
+      "pos": [
+        120,
+        590
+      ],
+      "size": [
+        140,
+        45
+      ]
+    },
+    {
+      "id": "translate",
+      "type": "backend",
+      "label": "Translate",
+      "sublabel": "Google/HF",
+      "pos": [
+        120,
+        710
+      ],
+      "size": [
+        140,
+        45
+      ]
+    },
+    {
+      "id": "tts",
+      "type": "backend",
+      "label": "TTS Engine",
+      "sublabel": "Edge/VieNeu",
+      "pos": [
+        880,
+        390
+      ],
+      "size": [
+        140,
+        45
+      ]
+    },
+    {
+      "id": "storage",
+      "type": "database",
+      "label": "Job Storage",
+      "sublabel": "jobs/<id>",
+      "pos": [
+        700,
+        530
+      ],
+      "size": [
+        140,
+        45
+      ]
+    },
+    {
+      "id": "ffmpeg",
+      "type": "external",
+      "label": "FFmpeg",
+      "sublabel": "audio/video",
+      "pos": [
+        80,
+        830
+      ],
+      "size": [
+        130,
+        40
+      ]
+    },
+    {
+      "id": "ytdlp",
+      "type": "external",
+      "label": "yt-dlp",
+      "sublabel": "YouTube",
+      "pos": [
+        420,
+        830
+      ],
+      "size": [
+        130,
+        40
+      ]
+    },
+    {
+      "id": "model",
+      "type": "cloud",
+      "label": "HF Cache",
+      "sublabel": "whisper",
+      "pos": [
+        50,
+        470
+      ],
+      "size": [
+        130,
+        40
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "client",
+      "to": "api"
+    },
+    {
+      "from": "api",
+      "to": "queue"
+    },
+    {
+      "from": "queue",
+      "to": "media",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "media",
+      "to": "transcribe"
+    },
+    {
+      "from": "media",
+      "to": "ffmpeg",
+      "route": "orthogonal-h"
+    },
+    {
+      "from": "media",
+      "to": "ytdlp",
+      "route": "orthogonal-h"
+    },
+    {
+      "from": "transcribe",
+      "to": "subtitle"
+    },
+    {
+      "from": "subtitle",
+      "to": "translate"
+    },
+    {
+      "from": "media",
+      "to": "tts"
+    },
+    {
+      "from": "media",
+      "to": "storage",
+      "fromSide": "bottom",
+      "toSide": "top"
+    }
+  ]
+}

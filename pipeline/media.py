@@ -119,15 +119,16 @@ def mux_soft_subtitles(video_path: Path, srt_path: Path, output_path: Path) -> P
     return output_path
 
 
-def burn_subtitles(video_path: Path, srt_path: Path, output_path: Path) -> Path:
+def burn_subtitles(video_path: Path, srt_path: Path, output_path: Path, font_size: int = 22) -> Path:
     require_tool("ffmpeg")
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    font_size = max(8, min(72, font_size))
     escaped_srt = str(srt_path).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
     cmd = [
         "ffmpeg",
         "-y",
         "-i", str(video_path),
-        "-vf", f"subtitles='{escaped_srt}':force_style='FontSize=22,Outline=1,Shadow=0,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'",
+        "-vf", f"subtitles='{escaped_srt}':force_style='FontSize={font_size},Outline=1,Shadow=0,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
         "-c:a", "copy",
         str(output_path),

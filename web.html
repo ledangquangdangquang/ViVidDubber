@@ -71,8 +71,7 @@ button, a, select, .file-drop { -webkit-tap-highlight-color: transparent; }
 .server-state[data-state="running"]::before { background: var(--color-accent-3); }
 
 .workbench {
-  width: min(100%, var(--page-max));
-  margin-inline: auto;
+  width: 100%;
   padding: var(--space-lg) var(--page-gutter) var(--space-3xl);
 }
 .bench-head { display: grid; gap: var(--space-xs); margin-block-end: var(--space-lg); }
@@ -108,7 +107,8 @@ button, a, select, .file-drop { -webkit-tap-highlight-color: transparent; }
 }
 .panel-head h2 { margin: 0; font-size: var(--text-base); font-weight: 700; }
 .panel-code { font-family: var(--font-mono); font-size: var(--text-xs); white-space: nowrap; }
-.setup form { display: grid; gap: var(--space-md); padding: var(--space-md); }
+.setup form { display: grid; gap: var(--space-sm); padding: var(--space-md); align-items: start; }
+.full-row { grid-column: 1 / -1; }
 
 .file-input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; }
 .file-drop {
@@ -130,7 +130,6 @@ button, a, select, .file-drop { -webkit-tap-highlight-color: transparent; }
 .file-drop[data-state="error"] { border-color: var(--color-error); background: var(--color-error-soft); }
 .file-drop:focus-within { outline: 3px solid var(--color-focus); outline-offset: 3px; }
 
-.field-grid { display: grid; gap: var(--space-md); }
 .radio-row { display: grid; gap: var(--space-sm); grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .url-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-sm); align-items: center; }
 .video-list { display: grid; gap: var(--space-xs); margin-block-start: var(--space-sm); max-height: 16rem; overflow-y: auto; border: var(--rule-hair) solid var(--color-rule-2); border-radius: var(--radius-input); padding: var(--space-sm); background: var(--color-accent-3-soft); }
@@ -397,12 +396,12 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
 }
 @media (min-width: 40rem) {
   .brand-suffix { display: inline; }
-  .field-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .setup form, .volume-group { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (min-width: 64rem) {
   .workbench { padding-block-start: var(--space-xl); }
   .bench-head { grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.8fr); align-items: end; }
-  .bench-grid { grid-template-columns: minmax(20rem, 25rem) minmax(0, 1fr); }
+  .bench-grid { grid-template-columns: minmax(28rem, 36rem) minmax(0, 1fr); }
   .setup { position: sticky; top: var(--space-md); }
 }
 @media (pointer: coarse) { .btn, select, .download { min-height: 3rem; } }
@@ -431,21 +430,21 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
     <section class="setup" aria-labelledby="setupTitle">
       <header class="panel-head"><h2 id="setupTitle">Thiết lập batch</h2><span class="panel-code">N INPUT → N MP4</span></header>
       <form id="jobForm">
-        <div class="field">
+        <div class="field full-row">
           <label>Nguồn video</label>
           <div class="radio-row">
             <label class="output-card"><input type="radio" name="source" value="file" checked><span><strong>File video</strong><small>Chọn hoặc thả file từ máy</small></span></label>
             <label class="output-card"><input type="radio" name="source" value="url"><span><strong>Link YouTube</strong><small>Dán link video hoặc playlist</small></span></label>
           </div>
         </div>
-        <div id="fileSource">
+        <div id="fileSource" class="full-row">
           <input class="file-input" id="videoFile" name="file" type="file" accept="video/*,.mkv,.mov,.mp4,.webm,.avi,.m4v" multiple aria-required="true">
           <label class="file-drop" id="fileDrop" for="videoFile" tabindex="0">
             <strong id="fileName">Chọn hoặc thả nhiều video</strong>
             <small id="fileMeta">MP4 · MOV · MKV · WEBM · AVI · M4V · chạy lần lượt</small>
           </label>
         </div>
-        <div id="urlSource" class="field" hidden>
+        <div id="urlSource" class="field full-row" hidden>
           <label for="videoUrl">Link YouTube</label>
           <div class="url-row">
             <input type="url" id="videoUrl" name="video_url" placeholder="https://www.youtube.com/watch?v=… hoặc playlist">
@@ -455,23 +454,21 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
           <div id="videoList" class="video-list" hidden></div>
         </div>
 
-        <div class="field-grid">
-          <div class="field">
-            <label for="whisperModel">Whisper model</label>
-            <select id="whisperModel" name="whisper_model">
-              <option value="small" selected>small (cân bằng)</option><option value="medium">medium (chậm, chính xác)</option><option value="base">base (nhanh)</option><option value="tiny">tiny (nhanh nhất)</option>
-            </select>
-            <span class="field-help">Lớn hơn thường chính xác hơn</span>
-          </div>
-          <div class="field">
-            <label for="whisperDevice">Chạy Whisper trên</label>
-            <select id="whisperDevice" name="whisper_device">
-              <option value="cpu" selected>CPU</option>
-              <option value="cuda">GPU (CUDA)</option>
-            </select>
-            <input type="hidden" id="whisperComputeType" name="whisper_compute_type" value="">
-            <span class="field-help" id="whisperDeviceHelp">GPU nhanh hơn nhiều; tự quay về CPU nếu lỗi CUDA</span>
-          </div>
+        <div class="field">
+          <label for="whisperModel">Whisper model</label>
+          <select id="whisperModel" name="whisper_model">
+            <option value="small" selected>small (cân bằng)</option><option value="medium">medium (chậm, chính xác)</option><option value="base">base (nhanh)</option><option value="tiny">tiny (nhanh nhất)</option>
+          </select>
+          <span class="field-help">Lớn hơn thường chính xác hơn</span>
+        </div>
+        <div class="field">
+          <label for="whisperDevice">Chạy Whisper trên</label>
+          <select id="whisperDevice" name="whisper_device">
+            <option value="cpu" selected>CPU</option>
+            <option value="cuda">GPU (CUDA)</option>
+          </select>
+          <input type="hidden" id="whisperComputeType" name="whisper_compute_type" value="">
+          <span class="field-help" id="whisperDeviceHelp">GPU nhanh hơn nhiều; tự quay về CPU nếu lỗi CUDA</span>
         </div>
 
         <div class="field">
@@ -483,7 +480,6 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
           </select>
           <span class="field-help" id="translationProviderHelp">Google Translate free, không cần API key</span>
         </div>
-
         <div class="field">
           <label for="translateDevice">Chạy dịch trên</label>
           <select id="translateDevice" name="translate_device">
@@ -494,17 +490,25 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
         </div>
 
         <input type="hidden" id="targetLang" name="target_lang" value="vi">
-        <label class="output-card">
+        <label class="output-card full-row">
           <input type="radio" name="export_mode" value="burn" checked>
           <span><strong>Burn phụ đề Việt vào video</strong><small>Phụ đề luôn hiện, không cần bật subtitle trong player.</small></span>
         </label>
 
-        <div class="switches">
+        <div class="field full-row">
+          <label for="subtitleFontSize">Cỡ chữ phụ đề</label>
+          <div class="slider-row">
+            <input id="subtitleFontSize" name="subtitle_font_size" type="range" min="12" max="48" value="22" step="1">
+            <output id="subtitleFontSizeVal" for="subtitleFontSize">22px</output>
+          </div>
+        </div>
+
+        <div class="switches full-row">
           <label class="switch"><span>Dịch sang tiếng Việt</span><input id="translateToggle" type="checkbox" checked></label>
           <label class="switch"><span>Giữ audio gốc nhỏ + lồng tiếng Việt</span><input id="dubToggle" type="checkbox" checked></label>
         </div>
 
-        <div id="volumeControls" class="volume-group">
+        <div id="volumeControls" class="volume-group full-row">
           <div class="field">
             <label for="bgVolume">Am luong audio goc</label>
             <div class="slider-row">
@@ -529,9 +533,8 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
             <option value="edge" selected>Edge-TTS (online)</option>
             <option value="vieneu">VieNeu-TTS (offline)</option>
           </select>
-          <span class="field-help" id="ttsProviderHelp">Edge-TTS cần internet. VieNeu chạy offline, 23 giọng, clone giọng.</span>
+          <span class="field-help" id="ttsProviderHelp">Edge-TTS cần internet. VieNeu offline, 23 giọng.</span>
         </div>
-
         <div class="field">
           <label for="ttsVoice">Giọng đọc</label>
           <select id="ttsVoice" name="tts_voice">
@@ -546,11 +549,11 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
             <option value="Thùy Dung">Thùy Dung (VieNeu · Nữ · Nam)</option>
             <option value="Mỹ Duyên">Mỹ Duyên (VieNeu · Nữ · Nam)</option>
           </select>
-          <span class="field-help" id="ttsVoiceHelp">Chọn engine trước, rồi chọn giọng tương ứng. VieNeu có 23 giọng đủ 3 miền.</span>
+          <span class="field-help" id="ttsVoiceHelp">Chọn engine trước, rồi chọn giọng tương ứng.</span>
         </div>
 
-        <button class="btn" id="startBtn" type="submit"><span id="startLabel">Thêm video vào hàng đợi</span></button>
-        <p class="config-note" id="configNote">Đang đọc cấu hình server…</p>
+        <button class="btn full-row" id="startBtn" type="submit"><span id="startLabel">Thêm video vào hàng đợi</span></button>
+        <p class="config-note full-row" id="configNote">Đang đọc cấu hình server…</p>
       </form>
     </section>
 
@@ -738,6 +741,9 @@ whisperDevice.addEventListener('change', () => {
   const ttsProvider = document.getElementById('ttsProvider');
   ttsProvider.addEventListener('change', updateTtsProviderUi);
 dubToggle.addEventListener('change', updateVolumeVisibility);
+const subtitleFontSize = document.getElementById('subtitleFontSize');
+const subtitleFontSizeVal = document.getElementById('subtitleFontSizeVal');
+subtitleFontSize.addEventListener('input', () => { subtitleFontSizeVal.textContent = `${subtitleFontSize.value}px`; });
 bgVolume.addEventListener('input', () => { bgVolumeVal.textContent = `${bgVolume.value}%`; });
 voiceVolume.addEventListener('input', () => { voiceVolumeVal.textContent = `${voiceVolume.value}%`; });
 updateVolumeVisibility();

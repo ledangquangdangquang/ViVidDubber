@@ -236,6 +236,7 @@ async def create_job(
     whisper_device: str = Form("cpu"),
     whisper_compute_type: str = Form(""),
     export_mode: str = Form("burn"),
+    subtitle_font_size: int = Form(22),
     translate: str = Form("true"),
     translation_provider: str = Form("google"),
     translate_device: str = Form("cpu"),
@@ -292,6 +293,7 @@ async def create_job(
             "whisper_device": whisper_device,
             "whisper_compute_type": whisper_compute_type,
             "export_mode": export_mode,
+            "subtitle_font_size": str(subtitle_font_size),
             "translate": translate,
             "translation_provider": translation_provider,
             "translate_device": translate_device,
@@ -529,7 +531,12 @@ def _run_job(job_id: str) -> None:
             state = _begin_step(job_id, "Burning subtitles into video", 96, output_burned_video)
             if state is None:
                 burn_source = output_dubbed_video if opts.get("dub", "false") == "true" else input_path
-                burn_subtitles(burn_source, subtitle_for_export, output_burned_video)
+                burn_subtitles(
+                    burn_source,
+                    subtitle_for_export,
+                    output_burned_video,
+                    font_size=int(opts.get("subtitle_font_size", 22)),
+                )
                 _add_file(job_id, "output_burned_video", output_burned_video)
             elif state in ("pause", "cancel"):
                 return _finish_control(job_id, state)
