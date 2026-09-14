@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ViVidDubber</title>
+<link rel="icon" id="favicon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -537,18 +538,17 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
         </div>
         <div class="field">
           <label for="ttsVoice">Giọng đọc</label>
-          <select id="ttsVoice" name="tts_voice">
-            <option value="vi-VN-HoaiMyNeural" selected>Hoài My (Edge · Nữ · Truyền cảm)</option>
-            <option value="vi-VN-NamMinhNeural">Nam Minh (Edge · Nam · Trầm ấm)</option>
-            <option value="Minh Quân">Minh Quân (VieNeu · Nam · Bắc)</option>
-            <option value="Phạm Tuyên">Phạm Tuyên (VieNeu · Nam · Bắc)</option>
-            <option value="Thái Sơn">Thái Sơn (VieNeu · Nam · Nam)</option>
-            <option value="Trúc Ly">Trúc Ly (VieNeu · Nữ · Bắc)</option>
-            <option value="Mai Anh">Mai Anh (VieNeu · Nữ · Bắc)</option>
-            <option value="Quỳnh Anh">Quỳnh Anh (VieNeu · Nữ · Bắc)</option>
-            <option value="Thùy Dung">Thùy Dung (VieNeu · Nữ · Nam)</option>
-            <option value="Mỹ Duyên">Mỹ Duyên (VieNeu · Nữ · Nam)</option>
-          </select>
+          <div style="display:flex; gap:.5rem">
+            <select id="ttsVoice" name="tts_voice" style="flex:1; min-width:0">
+              <optgroup label="Nam">
+                <option value="vi-VN-NamMinhNeural">Nam Minh (Edge · Nam · Trầm ấm)</option>
+              </optgroup>
+              <optgroup label="Nữ">
+                <option value="vi-VN-HoaiMyNeural" selected>Hoài My (Edge · Nữ · Truyền cảm)</option>
+              </optgroup>
+            </select>
+            <button type="button" id="previewVoiceBtn" class="ctl-btn" title="Nghe thử giọng">🔊</button>
+          </div>
           <span class="field-help" id="ttsVoiceHelp">Chọn engine trước, rồi chọn giọng tương ứng.</span>
         </div>
 
@@ -610,6 +610,21 @@ const voiceVolume = document.getElementById('voiceVolume');
 const voiceVolumeVal = document.getElementById('voiceVolumeVal');
 
 const rowCache = new Map();
+const knownStatus = new Map();
+const originalTitle = document.title;
+const faviconEl = document.getElementById('favicon');
+let badgeOn = false;
+
+function setBadge(on) {
+  if (badgeOn === on) return;
+  badgeOn = on;
+  faviconEl.href = on ? '/favicon-badge.svg' : '/favicon.svg';
+  document.title = on ? `🔴 ${originalTitle}` : originalTitle;
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) setBadge(false);
+});
 const downloadLabels = {
   output_burned_video: 'Video · giọng Việt + phụ đề burn',
   output_dubbed_video: 'Video · giọng Việt + soft sub',
@@ -741,6 +756,27 @@ whisperDevice.addEventListener('change', () => {
   const ttsProvider = document.getElementById('ttsProvider');
   ttsProvider.addEventListener('change', updateTtsProviderUi);
 dubToggle.addEventListener('change', updateVolumeVisibility);
+
+const previewVoiceBtn = document.getElementById('previewVoiceBtn');
+previewVoiceBtn.addEventListener('click', async () => {
+  const ttsVoiceSelect = document.getElementById('ttsVoice');
+  previewVoiceBtn.disabled = true;
+  previewVoiceBtn.textContent = '…';
+  try {
+    const fd = new FormData();
+    fd.set('tts_provider', ttsProvider.value);
+    fd.set('tts_voice', ttsVoiceSelect.value);
+    const res = await fetch('/api/preview-voice', { method: 'POST', body: fd });
+    if (!res.ok) throw new Error(await res.text());
+    const blob = await res.blob();
+    await new Audio(URL.createObjectURL(blob)).play();
+  } catch (err) {
+    finishWithError(err);
+  } finally {
+    previewVoiceBtn.disabled = false;
+    previewVoiceBtn.textContent = '🔊';
+  }
+});
 const subtitleFontSize = document.getElementById('subtitleFontSize');
 const subtitleFontSizeVal = document.getElementById('subtitleFontSizeVal');
 subtitleFontSize.addEventListener('input', () => { subtitleFontSizeVal.textContent = `${subtitleFontSize.value}px`; });
@@ -972,6 +1008,11 @@ function renderQueue(jobs) {
   const seen = new Set();
   jobs.forEach(job => {
     seen.add(job.id);
+    const prevStatus = knownStatus.get(job.id);
+    if (prevStatus && prevStatus !== job.status && (job.status === 'done' || job.status === 'error') && document.hidden) {
+      setBadge(true);
+    }
+    knownStatus.set(job.id, job.status);
     let article = rowCache.get(job.id);
     if (!article) {
       article = createRow(job.id);
@@ -1095,8 +1136,12 @@ function updateTtsProviderUi() {
     ttsVoiceHelp.textContent = 'Chọn 1 trong 2 giọng Edge-TTS';
     ttsVoice.value = 'vi-VN-HoaiMyNeural';
     ttsVoice.innerHTML = `
-      <option value="vi-VN-HoaiMyNeural" selected>Hoài My (Edge · Nữ · Truyền cảm)</option>
-      <option value="vi-VN-NamMinhNeural">Nam Minh (Edge · Nam · Trầm ấm)</option>
+      <optgroup label="Nam">
+        <option value="vi-VN-NamMinhNeural">Nam Minh (Edge · Nam · Trầm ấm)</option>
+      </optgroup>
+      <optgroup label="Nữ">
+        <option value="vi-VN-HoaiMyNeural" selected>Hoài My (Edge · Nữ · Truyền cảm)</option>
+      </optgroup>
     `;
     configNote.textContent = 'Edge-TTS · Microsoft Neural · online · 2 giọng';
     serverStatus.textContent = 'EDGE TTS';
@@ -1108,29 +1153,33 @@ function updateTtsProviderUi() {
     ttsVoiceHelp.textContent = '23 giọng VieNeu (Bắc/Trung/Nam) · voice cloning · offline';
     ttsVoice.value = 'Minh Quân';
     ttsVoice.innerHTML = `
-       <option value="Minh Đức" selected>Minh Đức (VieNeu · Nam · Bắc · Tin tức)</option>
-       <option value="Phạm Tuyên">Phạm Tuyên (VieNeu · Nam · Bắc · Tự nhiên)</option>
-       <option value="Thái Sơn">Thái Sơn (VieNeu · Nam · Nam · Kể chuyện)</option>
-       <option value="Xuân Vĩnh">Xuân Vĩnh (VieNeu · Nam · Bắc · Tự nhiên)</option>
-       <option value="Thanh Bình">Thanh Bình (VieNeu · Nam · Bắc · Kể chuyện)</option>
-       <option value="Trúc Ly">Trúc Ly (VieNeu · Nữ · Bắc · Tự nhiên)</option>
-       <option value="Ngọc Linh">Ngọc Linh (VieNeu · Nữ · Bắc · Kể chuyện)</option>
-       <option value="Đoan Trang">Đoan Trang (VieNeu · Nữ · Bắc · Tự nhiên)</option>
-       <option value="Mai Anh">Mai Anh (VieNeu · Nữ · Bắc · Tin tức)</option>
-       <option value="Thục Đoan">Thục Đoan (VieNeu · Nữ · Nam · Kể chuyện)</option>
-       <option value="Minh Triết">Minh Triết (VieNeu · Nam · Nam · Tin tức)</option>
-       <option value="Thùy Dung">Thùy Dung (VieNeu · Nữ · Nam · Tin tức)</option>
-       <option value="Quang Sơn">Quang Sơn (VieNeu · Nam · Trung · Tự nhiên)</option>
-       <option value="Ngọc Trân">Ngọc Trân (VieNeu · Nữ · Trung · Tự nhiên)</option>
-       <option value="Mỹ Duyên">Mỹ Duyên (VieNeu · Nữ · Nam · Đọc truyện)</option>
-       <option value="Quỳnh Anh">Quỳnh Anh (VieNeu · Nữ · Bắc · Đọc truyện)</option>
-       <option value="Đức Trí">Đức Trí (VieNeu · Nam · Nam · Đọc truyện)</option>
-       <option value="Kim Thanh">Kim Thanh (VieNeu · Nữ · Nam · Đọc truyện)</option>
-       <option value="Ngọc Huyền">Ngọc Huyền (VieNeu · Nữ · Bắc · Giọng đọc)</option>
-       <option value="Adam">Adam (VieNeu · Nam · Nam · Giọng đọc)</option>
-       <option value="Mạnh Dũng">Mạnh Dũng (VieNeu · Nam · Bắc · Tự nhiên)</option>
-       <option value="Minh Quân">Minh Quân (VieNeu · Nam · Bắc · Tự nhiên)</option>
-       <option value="Anh Khôi">Anh Khôi (VieNeu · Nam · Bắc · Kể chuyện)</option>
+       <optgroup label="Nam">
+         <option value="Minh Đức" selected>Minh Đức (VieNeu · Nam · Bắc · Tin tức)</option>
+         <option value="Phạm Tuyên">Phạm Tuyên (VieNeu · Nam · Bắc · Tự nhiên)</option>
+         <option value="Thái Sơn">Thái Sơn (VieNeu · Nam · Nam · Kể chuyện)</option>
+         <option value="Xuân Vĩnh">Xuân Vĩnh (VieNeu · Nam · Bắc · Tự nhiên)</option>
+         <option value="Thanh Bình">Thanh Bình (VieNeu · Nam · Bắc · Kể chuyện)</option>
+         <option value="Minh Triết">Minh Triết (VieNeu · Nam · Nam · Tin tức)</option>
+         <option value="Quang Sơn">Quang Sơn (VieNeu · Nam · Trung · Tự nhiên)</option>
+         <option value="Đức Trí">Đức Trí (VieNeu · Nam · Nam · Đọc truyện)</option>
+         <option value="Adam">Adam (VieNeu · Nam · Nam · Giọng đọc)</option>
+         <option value="Mạnh Dũng">Mạnh Dũng (VieNeu · Nam · Bắc · Tự nhiên)</option>
+         <option value="Minh Quân">Minh Quân (VieNeu · Nam · Bắc · Tự nhiên)</option>
+         <option value="Anh Khôi">Anh Khôi (VieNeu · Nam · Bắc · Kể chuyện)</option>
+       </optgroup>
+       <optgroup label="Nữ">
+         <option value="Trúc Ly">Trúc Ly (VieNeu · Nữ · Bắc · Tự nhiên)</option>
+         <option value="Ngọc Linh">Ngọc Linh (VieNeu · Nữ · Bắc · Kể chuyện)</option>
+         <option value="Đoan Trang">Đoan Trang (VieNeu · Nữ · Bắc · Tự nhiên)</option>
+         <option value="Mai Anh">Mai Anh (VieNeu · Nữ · Bắc · Tin tức)</option>
+         <option value="Thục Đoan">Thục Đoan (VieNeu · Nữ · Nam · Kể chuyện)</option>
+         <option value="Thùy Dung">Thùy Dung (VieNeu · Nữ · Nam · Tin tức)</option>
+         <option value="Ngọc Trân">Ngọc Trân (VieNeu · Nữ · Trung · Tự nhiên)</option>
+         <option value="Mỹ Duyên">Mỹ Duyên (VieNeu · Nữ · Nam · Đọc truyện)</option>
+         <option value="Quỳnh Anh">Quỳnh Anh (VieNeu · Nữ · Bắc · Đọc truyện)</option>
+         <option value="Kim Thanh">Kim Thanh (VieNeu · Nữ · Nam · Đọc truyện)</option>
+         <option value="Ngọc Huyền">Ngọc Huyền (VieNeu · Nữ · Bắc · Giọng đọc)</option>
+       </optgroup>
     `;
     configNote.textContent = 'VieNeu-TTS · offline · 23 giọng · 48 kHz · voice cloning';
     serverStatus.textContent = 'VIENEU OFFLINE';

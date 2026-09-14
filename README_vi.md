@@ -6,6 +6,36 @@ Công cụ tự động dịch phụ đề và lồng tiếng thuyết minh ti�
 video -> audio -> phụ đề gốc (Whisper) -> dịch sang Việt -> lồng tiếng (Edge-TTS / VieNeu-TTS) -> MP4 kèm phụ đề Việt
 ```
 
+### Hiệu năng
+
+Đo trên máy cấu hình bên dưới (lồng tiếng VieNeu-TTS), full pipeline: nhận diện giọng nói, dịch, lồng tiếng, mux MP4.
+
+| Video | Thời gian xử lý | Tỉ lệ | So với thời lượng gốc |
+|---|---|---|---|
+| 2 phút 45 giây | 2 phút 19 giây | 0.84× | nhanh hơn ~16% |
+| 1 phút 00 giây | 1 phút 12 giây | 1.20× | chậm hơn ~20% |
+| 3 phút 18 giây | 4 phút 16 giây | 1.29× | chậm hơn ~29% |
+| 41 phút 10 giây | 61 phút 12 giây | 1.49× | chậm hơn ~49% |
+
+Tỉ lệ tăng dần theo độ dài video trên GPU này — card 4GB VRAM bắt đầu đuối khi xử lý video dài. Video ngắn thậm chí nhanh hơn thời lượng gốc.
+
+**Cấu hình máy test:**
+
+| Thành phần | Thông số |
+|---|---|
+| GPU | NVIDIA GeForce RTX 3050 Laptop GPU (4 GB VRAM) |
+| CPU | Intel Core i5-11400H (12 luồng) |
+| RAM | 16 GB |
+| CUDA / driver | CUDA 12.6, driver 610.43.02 |
+| PyTorch | 2.14.0+cu126 |
+| Whisper device | `cuda` |
+| Translation device | `cuda` |
+| TTS engine | VieNeu-TTS (offline) |
+
+Số liệu thô (và các lần chạy sau) được tự động ghi vào `jobs/stats.jsonl` — mỗi dòng JSON là 1 job dub xong, gồm thời lượng video, thời gian xử lý và cấu hình GPU (đọc lại qua `GET /api/stats`).
+
+Chi phí: **0đ** — không cần API trả phí hay dịch vụ cloud.
+
 ## Tính năng
 
 - **Speech-to-Text**: Nhận diện giọng nói bằng Faster-Whisper (chạy offline, không tốn phí).
@@ -53,6 +83,15 @@ uv run python app.py           # khởi động server
 Mở trình duyệt: **http://127.0.0.1:8787**
 
 Tải video lên, chọn tùy chọn (provider dịch, lồng tiếng, burn phụ đề) rồi bấm chạy. Kết quả nằm trong thư mục `jobs/<job-id>/`.
+
+## Model tải về sẽ nằm ở đâu?
+
+Whisper, HuggingFace Hy-MT2-1.8B, EnViT5 và VieNeu-TTS đều tự động tải về qua Hugging Face Hub khi dùng lần đầu, vào cache dùng chung:
+
+- Linux/macOS: `~/.cache/huggingface/hub/`
+- Windows: `%USERPROFILE%\.cache\huggingface\hub\`
+
+Mỗi model có 1 thư mục riêng dạng `models--<org>--<tên>/`, ví dụ `models--Systran--faster-whisper-small`, `models--VietAI--envit5-translation`, `models--tencent--Hy-MT2-1.8B`, `models--pnnbao-ump--VieNeu-TTS-v3-Turbo`. Chưa chọn engine/provider đó trên UI thì chưa tải gì cả. Muốn đổi vị trí lưu (cho tất cả model cùng lúc), set biến môi trường `HF_HOME` trước khi chạy `uv run python app.py`.
 
 ## Model dịch thuật — chọn cái nào?
 

@@ -10,12 +10,31 @@ video -> audio -> original subtitles (Whisper) -> translate to Vietnamese -> voi
 
 ### Performance
 
-Tested on a standard GPU. Both runs include transcription, translation, voice-over, and MP4 muxing.
+Tested on the machine below (VieNeu-TTS voice-over), full pipeline: transcription, translation, voice-over, and MP4 muxing.
 
-| Input video | Processing time | Ratio | Speed vs. playback |
+| Video | Processing time | Ratio | Speed vs. playback |
 |---|---|---|---|
-| 12 min 23 s | 15 min 25 s | 1.23× realtime | ~23 % slower than live |
-| 21 min 26 s | 30 min 41 s | 1.43× realtime | ~43 % slower than live |
+| 2 min 45 s | 2 min 19 s | 0.84× realtime | ~16 % faster than live |
+| 1 min 00 s | 1 min 12 s | 1.20× realtime | ~20 % slower than live |
+| 3 min 18 s | 4 min 16 s | 1.29× realtime | ~29 % slower than live |
+| 41 min 10 s | 61 min 12 s | 1.49× realtime | ~49 % slower than live |
+
+Ratio climbs with video length on this GPU — a 4 GB card starts trading VRAM headroom for throughput on longer runs. Short clips can even beat realtime.
+
+**Test machine setup:**
+
+| Component | Spec |
+|---|---|
+| GPU | NVIDIA GeForce RTX 3050 Laptop GPU (4 GB VRAM) |
+| CPU | Intel Core i5-11400H (12 threads) |
+| RAM | 16 GB |
+| CUDA / driver | CUDA 12.6, driver 610.43.02 |
+| PyTorch | 2.14.0+cu126 |
+| Whisper device | `cuda` |
+| Translation device | `cuda` |
+| TTS engine | VieNeu-TTS (offline) |
+
+Raw numbers (and every future dub job) are logged automatically to `jobs/stats.jsonl` — one JSON line per finished dub, with video duration, processing time, and GPU config (`GET /api/stats` reads it back).
 
 Cost: **$0** — no paid APIs or cloud services required.
 
@@ -68,6 +87,15 @@ uv run python app.py           # start server
 Open **http://127.0.0.1:8787** in your browser.
 
 Upload a video, pick your options (translation provider, voice-over, burn subtitles) and run. Results land in `jobs/<job-id>/`.
+
+## Where do downloaded models go?
+
+Whisper, HuggingFace Hy-MT2-1.8B, EnViT5, and VieNeu-TTS all download automatically on first use via Hugging Face Hub, into the standard shared cache:
+
+- Linux/macOS: `~/.cache/huggingface/hub/`
+- Windows: `%USERPROFILE%\.cache\huggingface\hub\`
+
+Each model gets its own `models--<org>--<name>/` folder there, e.g. `models--Systran--faster-whisper-small`, `models--VietAI--envit5-translation`, `models--tencent--Hy-MT2-1.8B`, `models--pnnbao-ump--VieNeu-TTS-v3-Turbo`. Nothing downloads until you pick that engine/provider in the UI and run a job. Override the location (all models at once) with the `HF_HOME` env var before running `uv run python app.py`.
 
 ## Translation models — which one?
 

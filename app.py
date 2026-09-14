@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, field
+from functools import lru_cache
+import json
 import os
 from pathlib import Path
 import shutil
@@ -11,21 +13,24 @@ import time
 import uuid
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 
 _DIR = Path(__file__).parent
 _JOBS_DIR = _DIR / "jobs"
 _JOBS_DIR.mkdir(parents=True, exist_ok=True)
+_STATS_FILE = _JOBS_DIR / "stats.jsonl"
 
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
 MAX_JOBS = 50
 JOB_TTL_SECONDS = 3600 * 6  # 6 hours
 
-from pipeline.media import burn_subtitles, download_video, extract_audio, mux_soft_subtitles, resolve_video_urls
+from pipeline.media import burn_subtitles, download_video, extract_audio, mux_soft_subtitles, probe_media, resolve_video_urls
 from pipeline.subtitle import parse_srt, write_srt
 from pipeline.transcribe import FasterWhisperTranscriber
 from pipeline.translate import EnViT5Translator, GoogleTranslator, HuggingFaceTranslator
-from pipeline.tts import create_vietnamese_dub
+from pipeline.tts import EdgeTTSEngine, VieNeuTTS, create_vietnamese_dub
+
+PREVIEW_TEXT = "Xin chào, đây là bản nghe thử giọng đọc tiếng Việt."
 
 
 @dataclass
@@ -210,9 +215,41 @@ def favicon():
     return FileResponse(_DIR / "favicon.svg", media_type="image/svg+xml")
 
 
+@app.get("/favicon.svg")
+def favicon_svg():
+    return FileResponse(_DIR / "favicon.svg", media_type="image/svg+xml")
+
+
+@app.get("/favicon-badge.svg")
+def favicon_badge_svg():
+    return FileResponse(_DIR / "favicon-badge.svg", media_type="image/svg+xml")
+
+
 @app.get("/api/config")
 def config():
     return {"ok": True, "translation_providers": ["google", "huggingface", "envit5"]}
+
+
+@app.get("/api/stats")
+def stats():
+    """Video duration vs. dub/total completion time, one row per finished dub job, per GPU config."""
+    return _read_stats_file(_STATS_FILE)
+
+
+@lru_cache(maxsize=32)
+def _synthesize_preview(tts_provider: str, tts_voice: str) -> bytes:
+    engine = VieNeuTTS(default_voice=tts_voice) if tts_provider == "vieneu" else EdgeTTSEngine(default_voice=tts_voice)
+    wav_bytes, _duration, _latency = engine.synthesize(PREVIEW_TEXT, voice=tts_voice)
+    return wav_bytes
+
+
+@app.post("/api/preview-voice")
+def preview_voice(tts_provider: str = Form("edge"), tts_voice: str = Form("vi-VN-HoaiMyNeural")):
+    try:
+        wav_bytes = _synthesize_preview(tts_provider, tts_voice)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Không tạo được giọng thử: {exc}")
+    return Response(content=wav_bytes, media_type="audio/wav")
 
 
 @app.post("/api/resolve")
@@ -541,6 +578,9 @@ def _run_job(job_id: str) -> None:
             elif state in ("pause", "cancel"):
                 return _finish_control(job_id, state)
 
+        if opts.get("dub", "false") == "true":
+            _log_dub_stats(job_id, input_path)
+
         _set_step(job_id, "Done", 100)
         _set_job(job_id, status="done")
     except Exception as exc:
@@ -551,6 +591,48 @@ def _finish_control(job_id: str, state: str) -> None:
     if state == "cancel":
         _delete_job(job_id)
     # paused: leave job in JOBS with status=paused for later resume
+
+
+def _gpu_name() -> str:
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return torch.cuda.get_device_name(0)
+    except Exception:
+        pass
+    return "cpu"
+
+
+def _log_dub_stats(job_id: str, input_path: Path) -> None:
+    """Append video duration vs. total dub time for this GPU config to jobs/stats.jsonl."""
+    try:
+        video_duration = float(probe_media(input_path)["format"]["duration"])
+    except Exception:
+        video_duration = None
+    with JOBS_LOCK:
+        job = JOBS[job_id]
+        dub_elapsed = next(
+            (v for k, v in job.step_timings.items() if k.startswith("Generating Vietnamese voice-over")), None
+        )
+        row = {
+            "job_id": job_id,
+            "timestamp": round(time.time(), 1),
+            "video_duration_sec": video_duration,
+            "dub_elapsed_sec": dub_elapsed,
+            "total_elapsed_sec": round(sum(job.step_timings.values()), 1),
+            "gpu": _gpu_name(),
+            "whisper_device": job.options.get("whisper_device"),
+            "translate_device": job.options.get("translate_device"),
+            "tts_provider": job.options.get("tts_provider", "edge"),
+        }
+    with open(_STATS_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def _read_stats_file(path: Path) -> list[dict]:
+    if not path.is_file():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def main():
