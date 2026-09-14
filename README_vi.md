@@ -32,7 +32,7 @@ Tỉ lệ tăng dần theo độ dài video trên GPU này — card 4GB VRAM b�
 | Translation device | `cuda` |
 | TTS engine | VieNeu-TTS (offline) |
 
-Số liệu thô (và các lần chạy sau) được tự động ghi vào `jobs/stats.jsonl` — mỗi dòng JSON là 1 job dub xong, gồm thời lượng video, thời gian xử lý và cấu hình GPU (đọc lại qua `GET /api/stats`).
+Số liệu thô (và các lần chạy sau) được tự động ghi vào `jobs/stats.json` — một mảng JSON, mỗi phần tử là 1 job dub xong, gồm thời lượng video, thời gian xử lý và cấu hình GPU (đọc lại qua `GET /api/stats`).
 
 Chi phí: **0đ** — không cần API trả phí hay dịch vụ cloud.
 

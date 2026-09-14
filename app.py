@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 _DIR = Path(__file__).parent
 _JOBS_DIR = _DIR / "jobs"
 _JOBS_DIR.mkdir(parents=True, exist_ok=True)
-_STATS_FILE = _JOBS_DIR / "stats.jsonl"
+_STATS_FILE = _JOBS_DIR / "stats.json"
 
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
 MAX_JOBS = 50
@@ -269,19 +269,19 @@ async def create_job(
     file: UploadFile = File(None),
     video_url: str = Form(""),
     target_lang: str = Form("vi"),
-    whisper_model: str = Form("small"),
-    whisper_device: str = Form("cpu"),
+    whisper_model: str = Form("medium"),
+    whisper_device: str = Form("cuda"),
     whisper_compute_type: str = Form(""),
     export_mode: str = Form("burn"),
-    subtitle_font_size: int = Form(22),
+    subtitle_font_size: int = Form(15),
     translate: str = Form("true"),
-    translation_provider: str = Form("google"),
-    translate_device: str = Form("cpu"),
+    translation_provider: str = Form("huggingface"),
+    translate_device: str = Form("cuda"),
     dub: str = Form("true"),
-    tts_voice: str = Form("vi-VN-HoaiMyNeural"),
-    tts_provider: str = Form("edge"),
-    background_volume: float = Form(0.15),
-    voice_volume: float = Form(1.0),
+    tts_voice: str = Form("Thanh Bình"),
+    tts_provider: str = Form("vieneu"),
+    background_volume: float = Form(0.5),
+    voice_volume: float = Form(2.0),
 ):
     if export_mode not in {"soft", "burn"}:
         raise HTTPException(status_code=400, detail="Unsupported subtitle export mode.")
@@ -604,7 +604,7 @@ def _gpu_name() -> str:
 
 
 def _log_dub_stats(job_id: str, input_path: Path) -> None:
-    """Append video duration vs. total dub time for this GPU config to jobs/stats.jsonl."""
+    """Append video duration vs. total dub time for this GPU config to jobs/stats.json."""
     try:
         video_duration = float(probe_media(input_path)["format"]["duration"])
     except Exception:
@@ -625,14 +625,15 @@ def _log_dub_stats(job_id: str, input_path: Path) -> None:
             "translate_device": job.options.get("translate_device"),
             "tts_provider": job.options.get("tts_provider", "edge"),
         }
-    with open(_STATS_FILE, "a", encoding="utf-8") as f:
-        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        rows = _read_stats_file(_STATS_FILE)
+        rows.append(row)
+        _STATS_FILE.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _read_stats_file(path: Path) -> list[dict]:
     if not path.is_file():
         return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def main():

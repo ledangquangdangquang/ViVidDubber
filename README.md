@@ -34,7 +34,7 @@ Ratio climbs with video length on this GPU — a 4 GB card starts trading VRAM h
 | Translation device | `cuda` |
 | TTS engine | VieNeu-TTS (offline) |
 
-Raw numbers (and every future dub job) are logged automatically to `jobs/stats.jsonl` — one JSON line per finished dub, with video duration, processing time, and GPU config (`GET /api/stats` reads it back).
+Raw numbers (and every future dub job) are logged automatically to `jobs/stats.json` — a JSON array with one entry per finished dub, with video duration, processing time, and GPU config (`GET /api/stats` reads it back).
 
 Cost: **$0** — no paid APIs or cloud services required.
 
