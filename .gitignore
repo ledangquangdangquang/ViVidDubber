@@ -1,6 +1,7 @@
 .venv/
 __pycache__/
 jobs/
+voices/
 vi_video_dubber.egg-info/
 *.pyc
 *.pyo

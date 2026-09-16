@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import threading
 import time
 import uuid
@@ -200,6 +201,64 @@ def _safe_suffix(filename: str) -> str:
     return suffix if suffix in {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"} else ".mp4"
 
 
+MAX_CLONE_REF_BYTES = 25 * 1024 * 1024  # 25 MB, ref clips are a few seconds
+_VOICES_DIR = _DIR / "voices"
+_VOICES_DIR.mkdir(parents=True, exist_ok=True)
+_CLONED_VOICES_INDEX = _VOICES_DIR / "cloned_voices.json"
+
+
+def _load_cloned_voices() -> dict[str, str]:
+    if not _CLONED_VOICES_INDEX.exists():
+        return {}
+    try:
+        return json.loads(_CLONED_VOICES_INDEX.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_cloned_voices_index(index: dict[str, str]) -> None:
+    _CLONED_VOICES_INDEX.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _resolve_clone_ref_path(name: str) -> str | None:
+    filename = _load_cloned_voices().get(name)
+    if not filename:
+        return None
+    path = _VOICES_DIR / filename
+    return str(path) if path.exists() else None
+
+
+MAX_CLONE_REF_SECONDS = 8  # longer clips don't clone better, just slow things down
+
+
+def _save_clone_ref(upload: UploadFile, dest_dir: Path) -> Path:
+    """Save an uploaded voice-clone reference clip as WAV; caller must unlink it when done.
+
+    VieNeu reads ref clips with libsndfile, which can't decode .m4a/AAC — always
+    transcode through ffmpeg so any input format the browser gives us works, and
+    cut it down to MAX_CLONE_REF_SECONDS in the same pass.
+    """
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    stem = uuid.uuid4().hex[:12]
+    raw_suffix = Path(upload.filename or "").suffix or ".bin"
+    raw_path = dest_dir / f"{stem}_raw{raw_suffix}"
+    data = upload.file.read(MAX_CLONE_REF_BYTES + 1)
+    if len(data) > MAX_CLONE_REF_BYTES:
+        raise HTTPException(status_code=413, detail="File giọng mẫu quá lớn (tối đa 25 MB).")
+    raw_path.write_bytes(data)
+
+    wav_path = dest_dir / f"{stem}.wav"
+    result = subprocess.run(
+        ["ffmpeg", "-y", "-i", str(raw_path), "-t", str(MAX_CLONE_REF_SECONDS),
+         "-ar", "24000", "-ac", "1", str(wav_path)],
+        capture_output=True,
+    )
+    raw_path.unlink(missing_ok=True)
+    if result.returncode != 0 or not wav_path.exists():
+        raise HTTPException(status_code=400, detail="Không đọc được file giọng mẫu. Thử file WAV/MP3 khác.")
+    return wav_path
+
+
 @app.get("/", response_class=HTMLResponse)
 def index():
     return (_DIR / "web.html").read_text(encoding="utf-8")
@@ -236,19 +295,70 @@ def stats():
     return _read_stats_file(_STATS_FILE)
 
 
+@app.get("/api/clone-voices")
+def list_clone_voices():
+    return {"voices": sorted(_load_cloned_voices().keys())}
+
+
+@app.post("/api/clone-voices")
+def save_clone_voice(name: str = Form(...), file: UploadFile = File(...)):
+    name = name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Cần đặt tên cho giọng.")
+    wav_path = _save_clone_ref(file, _VOICES_DIR)
+    index = _load_cloned_voices()
+    old_filename = index.get(name)
+    index[name] = wav_path.name
+    _save_cloned_voices_index(index)
+    if old_filename and old_filename != wav_path.name:
+        (_VOICES_DIR / old_filename).unlink(missing_ok=True)
+    return {"voices": sorted(index.keys())}
+
+
+@app.delete("/api/clone-voices/{name}")
+def delete_clone_voice(name: str):
+    index = _load_cloned_voices()
+    filename = index.pop(name, None)
+    if filename is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy giọng.")
+    _save_cloned_voices_index(index)
+    (_VOICES_DIR / filename).unlink(missing_ok=True)
+    return {"voices": sorted(index.keys())}
+
+
 @lru_cache(maxsize=32)
-def _synthesize_preview(tts_provider: str, tts_voice: str) -> bytes:
-    engine = VieNeuTTS(default_voice=tts_voice) if tts_provider == "vieneu" else EdgeTTSEngine(default_voice=tts_voice)
+def _synthesize_preview(tts_provider: str, tts_voice: str, ref_audio: str | None = None) -> bytes:
+    engine = VieNeuTTS(default_voice=tts_voice, ref_audio=ref_audio) if tts_provider == "vieneu" else EdgeTTSEngine(default_voice=tts_voice)
     wav_bytes, _duration, _latency = engine.synthesize(PREVIEW_TEXT, voice=tts_voice)
     return wav_bytes
 
 
 @app.post("/api/preview-voice")
-def preview_voice(tts_provider: str = Form("edge"), tts_voice: str = Form("vi-VN-HoaiMyNeural")):
+def preview_voice(
+    tts_provider: str = Form("edge"),
+    tts_voice: str = Form("vi-VN-HoaiMyNeural"),
+    clone_ref_audio: UploadFile = File(None),
+    clone_voice_name: str = Form(""),
+):
+    ref_path = None
+    cleanup_ref = False
     try:
-        wav_bytes = _synthesize_preview(tts_provider, tts_voice)
+        if clone_ref_audio is not None and clone_ref_audio.filename:
+            ref_path = _save_clone_ref(clone_ref_audio, _JOBS_DIR / "preview_ref")
+            cleanup_ref = True
+        elif clone_voice_name.strip():
+            saved = _resolve_clone_ref_path(clone_voice_name.strip())
+            if saved is None:
+                raise HTTPException(status_code=404, detail="Không tìm thấy giọng đã lưu.")
+            ref_path = Path(saved)
+        wav_bytes = _synthesize_preview(tts_provider, tts_voice, ref_audio=str(ref_path) if ref_path else None)
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Không tạo được giọng thử: {exc}")
+    finally:
+        if ref_path and cleanup_ref:
+            ref_path.unlink(missing_ok=True)
     return Response(content=wav_bytes, media_type="audio/wav")
 
 
@@ -282,6 +392,8 @@ async def create_job(
     tts_provider: str = Form("vieneu"),
     background_volume: float = Form(0.5),
     voice_volume: float = Form(2.0),
+    clone_ref_audio: UploadFile = File(None),
+    clone_voice_name: str = Form(""),
 ):
     if export_mode not in {"soft", "burn"}:
         raise HTTPException(status_code=400, detail="Unsupported subtitle export mode.")
@@ -320,6 +432,18 @@ async def create_job(
                     raise HTTPException(status_code=413, detail="File too large.")
                 out.write(chunk)
         source_title = Path(file.filename or "input").stem
+
+    ref_audio_path = ""
+    if clone_ref_audio is not None and clone_ref_audio.filename:
+        ref_audio_path = str(_save_clone_ref(clone_ref_audio, job_dir))
+        tts_provider = "vieneu"  # cloning is a VieNeu-only feature
+    elif clone_voice_name.strip():
+        saved = _resolve_clone_ref_path(clone_voice_name.strip())
+        if saved is None:
+            raise HTTPException(status_code=404, detail="Không tìm thấy giọng đã lưu.")
+        ref_audio_path = saved
+        tts_provider = "vieneu"
+
     state = JobState(
         id=job_id,
         files={"input": str(input_path)},
@@ -337,6 +461,7 @@ async def create_job(
             "dub": dub,
             "tts_voice": tts_voice,
             "tts_provider": tts_provider,
+            "tts_ref_audio": ref_audio_path,
             "background_volume": str(background_volume),
             "voice_volume": str(voice_volume),
             "video_url": video_url,
@@ -375,7 +500,9 @@ def get_queue():
     if running and running in payloads:
         order.append(running)
     order += [jid for jid in pending if jid in payloads and jid not in order]
-    order += [jid for jid in payloads if jid not in order]
+    remaining = [jid for jid in payloads if jid not in order]
+    remaining.sort(key=lambda jid: payloads[jid]["created_at"], reverse=True)
+    order += remaining
     return {"jobs": [payloads[jid] for jid in order], "running": running}
 
 
@@ -559,6 +686,7 @@ def _run_job(job_id: str) -> None:
                     voice=opts.get("tts_voice", "vi-VN-HoaiMyNeural"),
                     background_volume=bg_vol, voice_volume=vc_vol,
                     tts_provider=opts.get("tts_provider", "edge"),
+                    ref_audio=opts.get("tts_ref_audio") or None,
                 )
                 _add_file(job_id, "output_dubbed_video", output_dubbed_video)
             elif state in ("pause", "cancel"):

@@ -202,6 +202,8 @@ Environment variables (optional):
 
 > Note: the model downloads from HuggingFace on first run (~900 MB). After that it runs fully offline.
 
+> Note: voice cloning (`ref_audio`) increases processing time vs. preset voices — avoid it for long videos.
+
 ## API (integration)
 
 - `POST /api/jobs` — create a job (multipart `file` + form options, or `video_url` a single YouTube video)

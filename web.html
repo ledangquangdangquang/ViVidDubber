@@ -133,6 +133,11 @@ button, a, select, .file-drop { -webkit-tap-highlight-color: transparent; }
 
 .radio-row { display: grid; gap: var(--space-sm); grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .url-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-sm); align-items: center; }
+.clone-upload-row { margin-top: var(--space-sm); }
+.clone-upload-row input[type="file"] { width: 100%; max-width: 100%; }
+.clone-save-row { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center; margin-top: var(--space-sm); }
+.clone-save-row input[type="text"] { flex: 1 1 10rem; min-width: 0; }
+.clone-save-row button { flex: 0 0 auto; }
 .video-list { display: grid; gap: var(--space-xs); margin-block-start: var(--space-sm); max-height: 16rem; overflow-y: auto; border: var(--rule-hair) solid var(--color-rule-2); border-radius: var(--radius-input); padding: var(--space-sm); background: var(--color-accent-3-soft); }
 .video-item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-sm); align-items: start; }
 .video-item input { width: 1.1rem; height: 1.1rem; margin-block-start: var(--space-2xs); accent-color: var(--color-error); }
@@ -548,6 +553,27 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
           </div>
           <span class="field-help" id="ttsVoiceHelp">Chọn engine trước, rồi chọn giọng tương ứng.</span>
         </div>
+        <div class="field full-row" id="cloneVoiceField" hidden>
+          <label for="savedCloneVoice">Clone giọng (VieNeu)</label>
+          <div class="url-row">
+            <select id="savedCloneVoice" name="clone_voice_name">
+              <option value="">— Không dùng giọng đã lưu —</option>
+            </select>
+            <button type="button" id="deleteCloneVoiceBtn" class="ctl-btn" title="Xoá giọng đã lưu">🗑</button>
+          </div>
+          <span class="field-help">Chọn 1 giọng đã lưu để dùng lại — không cần upload lại file mẫu.</span>
+
+          <div class="clone-upload-row">
+            <input id="cloneRefAudio" name="clone_ref_audio" type="file" accept="audio/*">
+          </div>
+          <span class="field-help">Hoặc tải file mẫu mới: giọng rõ, ít tạp âm. Dài hơn 8 giây sẽ tự cắt còn 8 giây đầu. Có file thì ưu tiên dùng file mẫu.</span>
+          <div class="clone-save-row">
+            <input id="cloneRefName" type="text" placeholder="Tên giọng mới (để lưu)" maxlength="60">
+            <button type="button" id="saveCloneRefBtn" class="btn btn-secondary">Lưu giọng</button>
+            <button type="button" id="clearCloneRefBtn" class="ctl-btn" title="Bỏ file mẫu">✕</button>
+          </div>
+          <span class="field-help">Đặt tên rồi bấm "Lưu giọng" để dùng lại sau này, không cần upload lại.</span>
+        </div>
 
         <button class="btn full-row" id="startBtn" type="submit"><span id="startLabel">Thêm video vào hàng đợi</span></button>
         <p class="config-note full-row" id="configNote">Đang đọc cấu hình server…</p>
@@ -754,6 +780,58 @@ whisperDevice.addEventListener('change', () => {
   ttsProvider.addEventListener('change', updateTtsProviderUi);
 dubToggle.addEventListener('change', updateVolumeVisibility);
 
+const cloneRefAudio = document.getElementById('cloneRefAudio');
+document.getElementById('clearCloneRefBtn').addEventListener('click', () => { cloneRefAudio.value = ''; });
+
+const savedCloneVoice = document.getElementById('savedCloneVoice');
+async function refreshClonedVoices(selectName) {
+  try {
+    const res = await fetch('/api/clone-voices');
+    if (!res.ok) return;
+    const data = await res.json();
+    savedCloneVoice.innerHTML = '<option value="">— Không dùng giọng đã lưu —</option>' +
+      data.voices.map(n => `<option value="${n}">${n}</option>`).join('');
+    if (selectName) savedCloneVoice.value = selectName;
+  } catch (_err) { /* ignore, list just stays as-is */ }
+}
+refreshClonedVoices();
+
+const cloneRefName = document.getElementById('cloneRefName');
+const saveCloneRefBtn = document.getElementById('saveCloneRefBtn');
+saveCloneRefBtn.addEventListener('click', async () => {
+  const file = cloneRefAudio.files[0];
+  const name = cloneRefName.value.trim();
+  if (!file) { finishWithError(new Error('Chọn file mẫu trước khi lưu.')); return; }
+  if (!name) { finishWithError(new Error('Đặt tên cho giọng trước khi lưu.')); return; }
+  saveCloneRefBtn.disabled = true;
+  try {
+    const fd = new FormData();
+    fd.set('name', name);
+    fd.set('file', file);
+    const res = await fetch('/api/clone-voices', { method: 'POST', body: fd });
+    if (!res.ok) throw new Error(await res.text());
+    cloneRefName.value = '';
+    await refreshClonedVoices(name);
+  } catch (err) {
+    finishWithError(err);
+  } finally {
+    saveCloneRefBtn.disabled = false;
+  }
+});
+
+document.getElementById('deleteCloneVoiceBtn').addEventListener('click', async () => {
+  const name = savedCloneVoice.value;
+  if (!name) return;
+  if (!confirm(`Xoá giọng "${name}"?`)) return;
+  try {
+    const res = await fetch(`/api/clone-voices/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(await res.text());
+    await refreshClonedVoices();
+  } catch (err) {
+    finishWithError(err);
+  }
+});
+
 const previewVoiceBtn = document.getElementById('previewVoiceBtn');
 previewVoiceBtn.addEventListener('click', async () => {
   const ttsVoiceSelect = document.getElementById('ttsVoice');
@@ -763,6 +841,8 @@ previewVoiceBtn.addEventListener('click', async () => {
     const fd = new FormData();
     fd.set('tts_provider', ttsProvider.value);
     fd.set('tts_voice', ttsVoiceSelect.value);
+    if (cloneRefAudio.files[0]) fd.set('clone_ref_audio', cloneRefAudio.files[0]);
+    else if (savedCloneVoice.value) fd.set('clone_voice_name', savedCloneVoice.value);
     const res = await fetch('/api/preview-voice', { method: 'POST', body: fd });
     if (!res.ok) throw new Error(await res.text());
     const blob = await res.blob();
@@ -1143,9 +1223,11 @@ function updateTtsProviderUi() {
     configNote.textContent = 'Edge-TTS · Microsoft Neural · online · 2 giọng';
     serverStatus.textContent = 'EDGE TTS';
     serverStatus.dataset.state = 'ready';
+    document.getElementById('cloneVoiceField').hidden = true;
     return;
   }
   if (provider === 'vieneu') {
+    document.getElementById('cloneVoiceField').hidden = false;
     ttsProviderHelp.textContent = 'VieNeu-TTS offline · 23 giọng · 3 miền · clone giọng';
     ttsVoiceHelp.textContent = '23 giọng VieNeu (Bắc/Trung/Nam) · voice cloning · offline';
     ttsVoice.value = 'Thanh Bình';

@@ -198,6 +198,8 @@ Biến môi trường (tùy chọn):
 
 > Lưu ý: model được tải từ HuggingFace lần đầu (~900 MB). Sau đó chạy offline hoàn toàn, không cần internet.
 
+> Lưu ý: dùng giọng clone (`ref_audio`) làm thời gian xử lý tăng lên so với giọng preset — hạn chế dùng với video dài.
+
 ## API (dành cho tích hợp)
 
 - `POST /api/jobs` — tạo job (multipart: `file` + form options, hoặc `video_url` một video YouTube)

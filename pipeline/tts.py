@@ -153,8 +153,9 @@ class VieNeuTTS:
     _instance = None
     _lock = __import__("threading").Lock()
 
-    def __init__(self, default_voice: str = "Minh Quân"):
+    def __init__(self, default_voice: str = "Minh Quân", ref_audio: str | None = None):
         self.default_voice = default_voice
+        self.ref_audio = ref_audio
 
     def _lazy(self):
         with self._lock:
@@ -185,7 +186,10 @@ class VieNeuTTS:
         selected_voice = voice or self.default_voice
         start_t = time.time()
         try:
-            audio = v.infer(cleaned, voice=selected_voice)
+            if self.ref_audio:
+                audio = v.infer(cleaned, ref_audio=self.ref_audio)
+            else:
+                audio = v.infer(cleaned, voice=selected_voice)
         except Exception as exc:
             print(f"[VieNeu Warning] Failed to synthesize '{cleaned[:35]}…' ({exc}); using silence.")
             return _generate_silent_wav_bytes(0.5), 0.5, 0.0
@@ -206,6 +210,7 @@ def create_vietnamese_dub(
     background_volume: float = 0.0,
     voice_volume: float = 1.0,
     tts_provider: str = "edge",
+    ref_audio: str | None = None,
 ) -> Path:
     if not blocks:
         raise DubbingError("No subtitle blocks available for dubbing.")
@@ -217,7 +222,7 @@ def create_vietnamese_dub(
     dub_audio = work_dir / "dub_vi.wav"
 
     if tts_provider == "vieneu":
-        engine = VieNeuTTS(default_voice=voice or "Minh Quân")
+        engine = VieNeuTTS(default_voice=voice or "Minh Quân", ref_audio=ref_audio)
     else:
         engine = EdgeTTSEngine(default_voice=voice)
     clip_paths: list[tuple[Path, int, float]] = []
