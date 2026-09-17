@@ -276,17 +276,17 @@ def design_tokens():
 
 @app.get("/favicon.ico")
 def favicon():
-    return FileResponse(_DIR / "favicon.svg", media_type="image/svg+xml")
+    return FileResponse(_DIR / "assets" / "favicon.svg", media_type="image/svg+xml")
 
 
 @app.get("/favicon.svg")
 def favicon_svg():
-    return FileResponse(_DIR / "favicon.svg", media_type="image/svg+xml")
+    return FileResponse(_DIR / "assets" / "favicon.svg", media_type="image/svg+xml")
 
 
 @app.get("/favicon-badge.svg")
 def favicon_badge_svg():
-    return FileResponse(_DIR / "favicon-badge.svg", media_type="image/svg+xml")
+    return FileResponse(_DIR / "assets" / "favicon-badge.svg", media_type="image/svg+xml")
 
 
 @app.get("/api/config")

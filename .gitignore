@@ -1,5 +1,6 @@
 .venv/
 .claude/
+CLAUDE.md
 brag-output/
 __pycache__/
 jobs/
