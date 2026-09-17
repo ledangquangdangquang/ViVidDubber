@@ -5,7 +5,7 @@ Create a short launch-style brag video for AI Video Dubber (ViVidDubber) — a l
 
 ## Output
 - Composition directory: `brag-output/composition/`
-- Rendered video: `brag-output/brag.mp4`
+- Rendered video: `brag-output/launch-video.mp4`
 - Format: landscape — 1920x1080
 - Duration: 20 seconds
 
