@@ -1,5 +1,7 @@
 # Vietnamese AI Video Dubber
 
+▶️ [Watch the 20s launch video](brag-output/brag.mp4)
+
 Fully local, fully free — no API keys, no paid services, no cloud dependencies. Everything runs on your own machine (offline mode available with all-local models).
 
 Automatic subtitle translation and Vietnamese voice-over for foreign-language videos (mostly English).
