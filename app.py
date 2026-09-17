@@ -9,12 +9,15 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 import uuid
+import zipfile
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
+from starlette.background import BackgroundTask
 
 _DIR = Path(__file__).parent
 _JOBS_DIR = _DIR / "jobs"
@@ -188,7 +191,9 @@ def _job_payload(job: JobState) -> dict:
         for name, path in job.files.items()
         if Path(path).is_file()
     }
-    if job.status in {"queued", "running"}:
+    if job.status == "queued":
+        total_elapsed = 0.0
+    elif job.status == "running":
         total_elapsed = time.time() - job.created_at
     else:
         total_elapsed = sum(job.step_timings.values())
@@ -390,6 +395,7 @@ async def create_job(
     dub: str = Form("true"),
     tts_voice: str = Form("Thanh Bình"),
     tts_provider: str = Form("vieneu"),
+    tts_device: str = Form("cuda"),
     background_volume: float = Form(0.5),
     voice_volume: float = Form(2.0),
     clone_ref_audio: UploadFile = File(None),
@@ -461,6 +467,7 @@ async def create_job(
             "dub": dub,
             "tts_voice": tts_voice,
             "tts_provider": tts_provider,
+            "tts_device": tts_device,
             "tts_ref_audio": ref_audio_path,
             "background_volume": str(background_volume),
             "voice_volume": str(voice_volume),
@@ -473,6 +480,44 @@ async def create_job(
 
     _enqueue_job(job_id)
     return _job_payload(state)
+
+
+@app.get("/api/jobs/download-all")
+def download_all():
+    """Zip the dub+Vietnamese-sub output (burned > soft) of every finished job."""
+    with JOBS_LOCK:
+        jobs = list(JOBS.values())
+
+    entries: list[tuple[str, str, Path]] = []
+    for job in jobs:
+        if job.status != "done":
+            continue
+        raw_path = job.files.get("output_burned_video") or job.files.get("output_dubbed_video")
+        if not raw_path or not Path(raw_path).is_file():
+            continue
+        stem = job.options.get("original_stem", Path(raw_path).stem)
+        entries.append((job.id, stem, Path(raw_path)))
+
+    if not entries:
+        raise HTTPException(status_code=404, detail="Chưa có video nào lồng tiếng xong để nén.")
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+    tmp.close()
+    used_names: set[str] = set()
+    with zipfile.ZipFile(tmp.name, "w", zipfile.ZIP_STORED) as zf:
+        for job_id, stem, path in entries:
+            name = f"{stem}_vi_dub{path.suffix}"
+            if name in used_names:
+                name = f"{stem}_vi_dub_{job_id[:8]}{path.suffix}"
+            used_names.add(name)
+            zf.write(path, arcname=name)
+
+    return FileResponse(
+        tmp.name,
+        filename="vivid_dub_all.zip",
+        media_type="application/zip",
+        background=BackgroundTask(os.unlink, tmp.name),
+    )
 
 
 @app.get("/api/jobs/{job_id}")
@@ -687,6 +732,7 @@ def _run_job(job_id: str) -> None:
                     background_volume=bg_vol, voice_volume=vc_vol,
                     tts_provider=opts.get("tts_provider", "edge"),
                     ref_audio=opts.get("tts_ref_audio") or None,
+                    tts_device=opts.get("tts_device", "cpu"),
                 )
                 _add_file(job_id, "output_dubbed_video", output_dubbed_video)
             elif state in ("pause", "cancel"):
@@ -752,6 +798,7 @@ def _log_dub_stats(job_id: str, input_path: Path) -> None:
             "whisper_device": job.options.get("whisper_device"),
             "translate_device": job.options.get("translate_device"),
             "tts_provider": job.options.get("tts_provider", "edge"),
+            "tts_device": job.options.get("tts_device"),
         }
         rows = _read_stats_file(_STATS_FILE)
         rows.append(row)

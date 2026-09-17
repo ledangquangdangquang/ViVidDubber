@@ -244,6 +244,7 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
 }
 .btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--btn-edge); transition-duration: 70ms; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: 0 4px 0 var(--btn-edge); }
+.btn[hidden] { display: none; }
 .btn-secondary { --btn-face: var(--color-paper-3); --btn-edge: var(--color-rule-2); color: var(--color-ink); min-height: 2.25rem; padding-inline: var(--space-md); }
 .btn[data-state="loading"]::before {
   content: "";
@@ -266,6 +267,8 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
   font-family: var(--font-mono);
   font-size: var(--text-xs);
 }
+.queue-stats { margin: 0 var(--space-md) var(--space-md); }
+.download-all-btn { display: flex; margin: 0 var(--space-md) var(--space-md); }
 
 .preview-panel { background: var(--color-paper); }
 .preview-panel .panel-head { background: var(--color-accent-2-soft); }
@@ -541,6 +544,14 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
           </select>
           <span class="field-help" id="ttsProviderHelp">Edge-TTS cần internet. VieNeu offline, 23 giọng.</span>
         </div>
+        <div class="field" id="ttsDeviceField">
+          <label for="ttsDevice">Chạy lồng tiếng / clone giọng</label>
+          <select id="ttsDevice" name="tts_device">
+            <option value="cpu">CPU</option>
+            <option value="cuda" selected>GPU (CUDA)</option>
+          </select>
+          <span class="field-help">Chỉ áp dụng cho VieNeu-TTS (kể cả clone giọng). Đổi thiết bị sẽ nạp lại model ở job kế tiếp.</span>
+        </div>
         <div class="field">
           <label for="ttsVoice">Giọng đọc</label>
           <div style="display:flex; gap:.5rem">
@@ -553,7 +564,7 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
           </div>
           <span class="field-help" id="ttsVoiceHelp">Chọn engine trước, rồi chọn giọng tương ứng.</span>
         </div>
-        <div class="field full-row" id="cloneVoiceField" hidden>
+        <div class="field" id="cloneVoiceField" hidden>
           <label for="savedCloneVoice">Clone giọng (VieNeu)</label>
           <div class="url-row">
             <select id="savedCloneVoice" name="clone_voice_name">
@@ -588,6 +599,8 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
       </div>
 
       <p class="queue-summary" id="queueSummary" aria-live="polite"></p>
+      <p class="config-note queue-stats" id="queueStats" aria-live="polite" hidden></p>
+      <a class="btn download-all-btn" id="downloadAllBtn" href="/api/jobs/download-all" hidden>⬇ Tải tất cả bản lồng tiếng (.zip)</a>
       <div class="queue-list" id="queueList" aria-label="Hàng đợi job"></div>
       <p class="jobline" id="jobLine" aria-live="polite" style="margin:0 var(--space-md) var(--space-md);">Chưa có job.</p>
       <div class="error" id="errorBox" role="alert" style="margin-inline:var(--space-md);"></div>
@@ -617,6 +630,8 @@ const startBtn = document.getElementById('startBtn');
 const startLabel = document.getElementById('startLabel');
 const serverStatus = document.getElementById('serverStatus');
 const queueSummary = document.getElementById('queueSummary');
+const queueStats = document.getElementById('queueStats');
+const downloadAllBtn = document.getElementById('downloadAllBtn');
 const queueList = document.getElementById('queueList');
 const queueCount = document.getElementById('queueCount');
 const jobLine = document.getElementById('jobLine');
@@ -1110,6 +1125,19 @@ function renderQueue(jobs) {
   const running = jobs.find(job => job.status === 'running');
   const waiting = jobs.filter(job => job.status === 'queued').length;
   const finished = jobs.filter(job => job.status === 'done' || job.status === 'error');
+  const done = jobs.filter(job => job.status === 'done');
+  const zippable = done.filter(job => job.downloads?.output_burned_video || job.downloads?.output_dubbed_video);
+
+  if (jobs.length) {
+    const totalTime = done.reduce((sum, job) => sum + (job.total_elapsed || 0), 0);
+    const avgTime = done.length ? totalTime / done.length : 0;
+    queueStats.textContent = `Tổng ${jobs.length} job · ${done.length} xong · Tổng thời gian xử lý ${humanTime(Math.round(totalTime))} · TB ${humanTime(Math.round(avgTime))}/job`;
+    queueStats.hidden = false;
+  } else {
+    queueStats.hidden = true;
+  }
+  downloadAllBtn.hidden = !(!running && waiting === 0 && zippable.length > 0);
+
   if (running) {
     const name = running.options?.original_stem || running.id;
     jobLine.textContent = `Đang chạy: ${name} · ${running.step} · ${running.progress}%`;
@@ -1224,10 +1252,12 @@ function updateTtsProviderUi() {
     serverStatus.textContent = 'EDGE TTS';
     serverStatus.dataset.state = 'ready';
     document.getElementById('cloneVoiceField').hidden = true;
+    document.getElementById('ttsDeviceField').hidden = true;
     return;
   }
   if (provider === 'vieneu') {
     document.getElementById('cloneVoiceField').hidden = false;
+    document.getElementById('ttsDeviceField').hidden = false;
     ttsProviderHelp.textContent = 'VieNeu-TTS offline · 23 giọng · 3 miền · clone giọng';
     ttsVoiceHelp.textContent = '23 giọng VieNeu (Bắc/Trung/Nam) · voice cloning · offline';
     ttsVoice.value = 'Thanh Bình';

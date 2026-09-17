@@ -51,6 +51,23 @@ Two older tools, still present and documented in `README.md` + `tool/WEBSOCKET_A
 
 Tests for the old stack live in `tool/test_pipeline.py` (pytest); **pytest is not installed in either venv by default** — install it into `py/.venv` before running. `vi-video-dubber/` has no tests.
 
+## UI changes: use the Hallmark skill
+
+`web.html` already carries a locked design system: `tokens.css` (Catppuccin Mocha palette) plus a
+`/* Hallmark · genre: ... macrostructure: Workbench · theme: ... */` stamp at the top of its `<style>`
+block. Any request to change, fix, or redesign the UI must go through the **`hallmark`** skill
+(`.claude/skills/hallmark`) — invoke it via the Skill tool rather than hand-rolling CSS.
+
+- For small additions/fixes to existing markup, treat it as `hallmark redesign` on `./web.html`
+  (single-page flow) — preserve the existing IA, tokens, and stamp; don't invent new colors/fonts.
+- Reference existing tokens (`var(--color-*)`, `var(--space-*)`, `var(--radius-*)`, ...) from
+  `tokens.css`. No inline `style="..."` — add a real CSS rule.
+- Don't swap the theme or macrostructure without the user asking for a redesign; this project uses
+  Catppuccin (see the `syntaxasspiral-zk-context-vault-catppuccin-theming` skill for palette values)
+  as its locked palette, not the Hallmark catalog's 20 named themes.
+- Update the stamp comment and `.hallmark/log.json` (if present) when a change actually alters the
+  structural fingerprint, not for routine bug fixes.
+
 ## Editing conventions
 
 - Validate JavaScript in any edited standalone HTML (both `tts_web.html` and `vi-video-dubber/web.html`):

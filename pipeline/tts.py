@@ -153,13 +153,17 @@ class VieNeuTTS:
     _instance = None
     _lock = __import__("threading").Lock()
 
-    def __init__(self, default_voice: str = "Minh Quân", ref_audio: str | None = None):
+    _device = None
+
+    def __init__(self, default_voice: str = "Minh Quân", ref_audio: str | None = None, device: str | None = None):
         self.default_voice = default_voice
         self.ref_audio = ref_audio
+        self.device = device
 
     def _lazy(self):
+        device = self.device or os.environ.get("VIENEU_DEVICE", "cpu")
         with self._lock:
-            if self._instance is None:
+            if self._instance is None or type(self)._device != device:
                 try:
                     import importlib
                     vieneu_mod = importlib.import_module('vieneu')
@@ -167,9 +171,10 @@ class VieNeuTTS:
                 except ImportError as exc:
                     raise DubbingError("VieNeu-TTS needs 'vieneu'. Install with: uv add vieneu") from exc
                 os.environ.setdefault("CC", "/usr/bin/gcc")
-                v = Vieneu(device=os.environ.get("VIENEU_DEVICE", "cpu"))
+                v = Vieneu(device=device)
                 v.list_preset_voices()
-                self._instance = v
+                type(self)._instance = v
+                type(self)._device = device
         return self._instance
 
     def synthesize(
@@ -211,6 +216,7 @@ def create_vietnamese_dub(
     voice_volume: float = 1.0,
     tts_provider: str = "edge",
     ref_audio: str | None = None,
+    tts_device: str | None = None,
 ) -> Path:
     if not blocks:
         raise DubbingError("No subtitle blocks available for dubbing.")
@@ -222,7 +228,7 @@ def create_vietnamese_dub(
     dub_audio = work_dir / "dub_vi.wav"
 
     if tts_provider == "vieneu":
-        engine = VieNeuTTS(default_voice=voice or "Minh Quân", ref_audio=ref_audio)
+        engine = VieNeuTTS(default_voice=voice or "Minh Quân", ref_audio=ref_audio, device=tts_device)
     else:
         engine = EdgeTTSEngine(default_voice=voice)
     clip_paths: list[tuple[Path, int, float]] = []

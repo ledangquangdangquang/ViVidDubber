@@ -72,8 +72,8 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ## Cài đặt và chạy
 
 ```bash
-git clone <địa-chỉ-repo> vi-video-dubber
-cd vi-video-dubber
+git clone https://github.com/ledangquangdangquang/ViVidDubber
+cd ViVidDubber
 uv sync --frozen               # cài đặt toàn bộ dependencies (bao gồm VieNeu-TTS)
 uv run python app.py           # khởi động server
 ```
