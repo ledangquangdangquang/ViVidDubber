@@ -1,4 +1,4 @@
-[![Vietnamese AI Video Dubber](https://opengraph.githubassets.com/1/ledangquangdangquang/ViVidDubber)](https://github.com/ledangquangdangquang/ViVidDubber)
+# Vietnamese AI Video Dubber
 
 <p align="center">Lồng tiếng video tiếng Việt hoàn toàn local, hoàn toàn miễn phí — nhận diện Whisper, dịch AI, thuyết minh Edge-TTS / VieNeu-TTS. Không API key, không cloud, 0đ.</p>
 
@@ -9,12 +9,6 @@
 </p>
 
 https://github.com/user-attachments/assets/81dc4e20-f8ca-4456-8f00-f3903fb61a25
-
-<p align="center">
-  <a href="#cài-đặt-và-chạy">Bắt đầu</a>
-  · <a href="AGENTS.md">Tài liệu</a>
-  · <a href="https://github.com/ledangquangdangquang/ViVidDubber/issues">Báo lỗi</a>
-</p>
 
 <p align="center">
 <a href="README.md">English</a> | Tiếng Việt
