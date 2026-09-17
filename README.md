@@ -2,12 +2,6 @@
 
 <p align="center">Fully local, fully free Vietnamese video dubbing — Whisper transcription, AI translation, and Edge-TTS / VieNeu-TTS voice-over. No API keys, no cloud, $0.</p>
 
-<p align="center">
-  <img alt="GitHub commit activity" src="https://img.shields.io/github/commit-activity/m/ledangquangdangquang/ViVidDubber" />
-  <img alt="GitHub last commit" src="https://img.shields.io/github/last-commit/ledangquangdangquang/ViVidDubber" />
-  <img alt="GitHub stars" src="https://img.shields.io/github/stars/ledangquangdangquang/ViVidDubber" />
-</p>
-
 https://github.com/user-attachments/assets/81dc4e20-f8ca-4456-8f00-f3903fb61a25
 
 <p align="center">
