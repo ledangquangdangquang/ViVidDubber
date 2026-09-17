@@ -1,6 +1,9 @@
 # Vietnamese AI Video Dubber
 
-▶️ [Watch the 20s launch video](brag-output/brag.mp4)
+
+https://github.com/user-attachments/assets/d4450fab-0dde-48b6-899b-ba9e808f8793
+
+
 
 Fully local, fully free — no API keys, no paid services, no cloud dependencies. Everything runs on your own machine (offline mode available with all-local models).
 
