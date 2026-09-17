@@ -1,10 +1,26 @@
-# Vietnamese AI Video Dubber
+[![Vietnamese AI Video Dubber](https://opengraph.githubassets.com/1/ledangquangdangquang/ViVidDubber)](https://github.com/ledangquangdangquang/ViVidDubber)
+
+<p align="center">Fully local, fully free Vietnamese video dubbing — Whisper transcription, AI translation, and Edge-TTS / VieNeu-TTS voice-over. No API keys, no cloud, $0.</p>
+
+<p align="center">
+  <img alt="GitHub commit activity" src="https://img.shields.io/github/commit-activity/m/ledangquangdangquang/ViVidDubber" />
+  <img alt="GitHub last commit" src="https://img.shields.io/github/last-commit/ledangquangdangquang/ViVidDubber" />
+  <img alt="GitHub stars" src="https://img.shields.io/github/stars/ledangquangdangquang/ViVidDubber" />
+</p>
 
 https://github.com/user-attachments/assets/81dc4e20-f8ca-4456-8f00-f3903fb61a25
 
-Fully local, fully free — no API keys, no paid services, no cloud dependencies. Everything runs on your own machine (offline mode available with all-local models).
+<p align="center">
+  <a href="#install--run">Getting Started</a>
+  · <a href="AGENTS.md">Docs</a>
+  · <a href="https://github.com/ledangquangdangquang/ViVidDubber/issues">Bug reports</a>
+</p>
 
-Automatic subtitle translation and Vietnamese voice-over for foreign-language videos (mostly English).
+<p align="center">
+English | <a href="README_vi.md">Tiếng Việt</a>
+</p>
+
+Everything runs on your own machine (offline mode available with all-local models). Automatic subtitle translation and Vietnamese voice-over for foreign-language videos (mostly English).
 
 ```text
 video -> audio -> original subtitles (Whisper) -> translate to Vietnamese -> voice-over (Edge-TTS / VieNeu-TTS) -> MP4 with Vietnamese subtitles
@@ -39,8 +55,6 @@ Ratio climbs with video length on this GPU — a 4 GB card starts trading VRAM h
 Raw numbers (and every future dub job) are logged automatically to `jobs/stats.json` — a JSON array with one entry per finished dub, with video duration, processing time, and GPU config (`GET /api/stats` reads it back).
 
 Cost: **$0** — no paid APIs or cloud services required.
-
-> Tiếng Việt: xem [README_vi.md](README_vi.md)
 
 ## Features
 
