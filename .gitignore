@@ -1,5 +1,6 @@
 .venv/
 .claude/
+brag-output/
 __pycache__/
 jobs/
 voices/
