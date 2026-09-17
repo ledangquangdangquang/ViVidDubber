@@ -1,6 +1,6 @@
 # Vietnamese AI Video Dubber
 
-https://github.com/user-attachments/assets/d4450fab-0dde-48b6-899b-ba9e808f8793
+https://github.com/user-attachments/assets/81dc4e20-f8ca-4456-8f00-f3903fb61a25
 
 Công cụ tự động dịch phụ đề và lồng tiếng thuyết minh tiếng Việt cho video nước ngoài (chủ yếu tiếng Anh).
 
