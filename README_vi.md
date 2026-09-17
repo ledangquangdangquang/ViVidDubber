@@ -1,12 +1,13 @@
-# Vietnamese AI Video Dubber
+<h1 align="center">Vietnamese AI Video Dubber</h1>
 
 <p align="center">Lồng tiếng video tiếng Việt hoàn toàn local, hoàn toàn miễn phí — nhận diện Whisper, dịch AI, thuyết minh Edge-TTS / VieNeu-TTS. Không API key, không cloud, 0đ.</p>
-
-https://github.com/user-attachments/assets/81dc4e20-f8ca-4456-8f00-f3903fb61a25
 
 <p align="center">
 <a href="README.md">English</a> | Tiếng Việt
 </p>
+
+https://github.com/user-attachments/assets/81dc4e20-f8ca-4456-8f00-f3903fb61a25
+
 
 Công cụ tự động dịch phụ đề và lồng tiếng thuyết minh tiếng Việt cho video nước ngoài (chủ yếu tiếng Anh).
 

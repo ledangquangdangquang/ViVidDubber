@@ -1,12 +1,13 @@
-# Vietnamese AI Video Dubber
+<h1 align="center">Vietnamese AI Video Dubber</h1>
 
 <p align="center">Fully local, fully free Vietnamese video dubbing — Whisper transcription, AI translation, and Edge-TTS / VieNeu-TTS voice-over. No API keys, no cloud, $0.</p>
-
-https://github.com/user-attachments/assets/81dc4e20-f8ca-4456-8f00-f3903fb61a25
 
 <p align="center">
 English | <a href="README_vi.md">Tiếng Việt</a>
 </p>
+
+https://github.com/user-attachments/assets/81dc4e20-f8ca-4456-8f00-f3903fb61a25
+
 
 Everything runs on your own machine (offline mode available with all-local models). Automatic subtitle translation and Vietnamese voice-over for foreign-language videos (mostly English).
 
