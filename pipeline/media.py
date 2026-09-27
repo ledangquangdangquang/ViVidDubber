@@ -59,8 +59,10 @@ def require_tool(tool_name: str) -> None:
         raise MediaToolError(f"Required binary '{tool_name}' was not found in PATH.")
 
 
-def run_command(cmd: list[str], timeout: int | None = None) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+def run_command(cmd: list[str], timeout: int | None = 1800) -> subprocess.CompletedProcess[str]:
+    # stdin=DEVNULL: an inherited terminal stdin lets ffmpeg get stopped by SIGTTIN mid-run (silent hang);
+    # the default timeout turns any other hang into a job error instead of a job stuck forever.
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
     if result.returncode != 0:
         raise MediaToolError(
             f"Command failed with exit code {result.returncode}:\n"

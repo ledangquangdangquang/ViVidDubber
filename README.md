@@ -169,6 +169,7 @@ WHISPER_DEVICE=cuda WHISPER_COMPUTE_TYPE=float16 uv run python app.py
 | `WHISPER_DEVICE` | `cpu` | `cpu` or `cuda` |
 | `WHISPER_COMPUTE_TYPE` | `int8` | `int8`/`float16`/`float32` |
 | `WHISPER_BEAM_SIZE` | `1` | Beam search — higher = more accurate, slower |
+| `SUBTITLE_MAX_CHARS` | `80` | Max characters per on-screen subtitle block. Transcription/translation/dub stay whole-sentence; only the displayed subtitles are split |
 
 Default Whisper model is `small` (selectable in the UI). First run downloads it from HuggingFace.
 

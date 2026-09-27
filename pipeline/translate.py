@@ -29,17 +29,11 @@ def _translate_blocks(
         texts = [block.text for block in batch]
         translated_texts = translator._translate_texts(texts, source_lang, target_lang)
         if len(translated_texts) != len(batch):
-            translated_texts = (translated_texts + [""] * len(batch))[: len(batch)]
-            missing_idx = [
-                i for i, t in enumerate(translated_texts) if not t.strip()
-            ]
-            if not missing_idx:
-                missing_idx = list(range(len(batch)))
-            for i in missing_idx:
-                single = translator._translate_texts(
-                    [texts[i]], source_lang, target_lang
-                )
-                translated_texts[i] = single[0] if single else ""
+            # Count mismatch means alignment is unknown: redo every line on its own.
+            translated_texts = []
+            for text in texts:
+                single = translator._translate_texts([text], source_lang, target_lang)
+                translated_texts.append(single[0] if len(single) == 1 else "")
         for block, text in zip(batch, translated_texts):
             final = text.strip() if text and text.strip() else block.text
             if not text.strip():
@@ -242,7 +236,6 @@ class HuggingFaceTranslator(_BatchTranslator):
     _tokenizer = None
     _lock = __import__("threading").Lock()
     _HF_REPO = "tencent/Hy-MT2-1.8B"
-    _DELIM = "\n-----"
 
     def __init__(self, model: str | None = None, device: str | None = None):
         self.repo = model or os.environ.get("HF_TRANSLATE_REPO", self._HF_REPO)
@@ -286,30 +279,34 @@ class HuggingFaceTranslator(_BatchTranslator):
         return self._model, self._tokenizer
 
     def _translate_texts(self, texts: list[str], source_lang: str, target_lang: str) -> list[str]:
+        # One prompt per line, batched: no delimiter to lose, so outputs can never shift across lines.
         model, tokenizer = self._lazy_load()
         tgt_name = _lang_name(target_lang)
-        source = self._DELIM.join(texts)
-        prompt = (
-            f"Please accurately translate the following text into {tgt_name}. "
-            "These are subtitle lines, so keep every translation short and concise — "
-            "roughly the same length as the source, never longer. Avoid fluff, filler, "
-            "or redundant words. You must retain the exact same number of delimiters "
-            "in the translation. Strictly do not omit, escape, or translate these "
-            "symbols, and pay close attention to their placement.\n\n"
-            f"{source}"
-        )
-        messages = [{"role": "user", "content": prompt}]
-        input_ids = tokenizer.apply_chat_template(
-            messages, return_tensors="pt", add_generation_prompt=True
+        prompts = [
+            tokenizer.apply_chat_template(
+                [{"role": "user", "content": (
+                    f"Translate the following subtitle line into {tgt_name}, without additional explanation. "
+                    "Keep it concise, roughly the same length as the source.\n\n" + text
+                )}],
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+            for text in texts
+        ]
+        tokenizer.padding_side = "left"
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        encoded = tokenizer(
+            prompts, return_tensors="pt", padding=True, add_special_tokens=False, return_token_type_ids=False
         ).to(model.device)
         outputs = model.generate(
-            input_ids,
+            **encoded,
             max_new_tokens=512,
             temperature=0.3,
             top_p=0.6,
             top_k=20,
             do_sample=True,
+            pad_token_id=tokenizer.pad_token_id,
         )
-        new_tokens = outputs[0][input_ids.shape[1]:]
-        output_text = tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
-        return [p.strip() for p in output_text.split(self._DELIM) if p.strip()]
+        new_tokens = outputs[:, encoded["input_ids"].shape[1]:]
+        return [t.strip() for t in tokenizer.batch_decode(new_tokens, skip_special_tokens=True)]

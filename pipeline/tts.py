@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import hashlib
 import io
 import math
 import os
@@ -50,6 +51,11 @@ def _clean_tts_text(text: str) -> str:
     return text
 
 
+def _cache_key(voice: str, speed: float, text: str) -> str:
+    """Keyed on the text itself, so an edited SRT line never reuses stale audio."""
+    return f"{voice}_{speed}_{hashlib.sha1(text.encode()).hexdigest()[:12]}.wav"
+
+
 def _build_atempo_filter(ratio: float) -> str:
     ratio = max(0.25, min(ratio, 4.0))
     filters = []
@@ -80,7 +86,7 @@ def _stretch_one_clip(clip_path: Path, target_ms: int) -> Path | None:
         "-filter:a", atempo,
         "-vn", str(out_path), "-loglevel", "error",
     ]
-    result = subprocess.run(cmd, capture_output=True)
+    result = subprocess.run(cmd, capture_output=True, stdin=subprocess.DEVNULL, timeout=300)
     if result.returncode == 0 and out_path.exists():
         return out_path
     return None
@@ -159,6 +165,7 @@ class VieNeuTTS:
         self.default_voice = default_voice
         self.ref_audio = ref_audio
         self.device = device
+        self._ref_voice = None
 
     def _lazy(self):
         device = self.device or os.environ.get("VIENEU_DEVICE", "cpu")
@@ -175,6 +182,10 @@ class VieNeuTTS:
                 v.list_preset_voices()
                 type(self)._instance = v
                 type(self)._device = device
+            # vieneu re-denoises + re-encodes ref_audio on CPU (~2.4s) on every infer(); encode once.
+            if self.ref_audio and self._ref_voice is None:
+                emb, codes = self._instance.encode_reference(self.ref_audio)
+                self._ref_voice = {"speaker_emb": emb, "codes": codes}
         return self._instance
 
     def synthesize(
@@ -191,8 +202,8 @@ class VieNeuTTS:
         selected_voice = voice or self.default_voice
         start_t = time.time()
         try:
-            if self.ref_audio:
-                audio = v.infer(cleaned, ref_audio=self.ref_audio)
+            if self._ref_voice:
+                audio = v.infer(cleaned, voice=self._ref_voice)
             else:
                 audio = v.infer(cleaned, voice=selected_voice)
         except Exception as exc:
@@ -203,6 +214,18 @@ class VieNeuTTS:
         with io.BytesIO(wav_bytes) as f:
             dur = sf.info(f).duration
         return wav_bytes, dur, time.time() - start_t
+
+    def synthesize_batch(self, texts: list[str], voice: str | None = None) -> list[bytes]:
+        """All lines in one call: on GPU vieneu shares each forward step across lines (~3-4x faster than per-line infer)."""
+        v = self._lazy()
+        try:
+            audios = v.infer_batch(
+                [_clean_tts_text(t) for t in texts], voice=self._ref_voice or voice or self.default_voice
+            )
+        except Exception as exc:
+            print(f"[VieNeu Warning] Batch synthesis failed ({exc}); falling back to one line at a time.")
+            return [self.synthesize(t, voice=voice)[0] for t in texts]
+        return [_array_to_wav(a, 48000) if len(a) else _generate_silent_wav_bytes(0.5) for a in audios]
 
 
 def create_vietnamese_dub(
@@ -237,8 +260,7 @@ def create_vietnamese_dub(
     def _render(task: tuple[SubtitleBlock, str, int, float]) -> tuple[Path, int, float] | None:
         block, text, start_ms, slot_sec = task
         clip_path = clips_dir / f"{block.index:05d}.wav"
-        cache_key = f"{voice}_{speed}_{block.index:05d}.wav"
-        cached_path = cache_dir / cache_key
+        cached_path = cache_dir / _cache_key(voice, speed, text)
         try:
             if cached_path.exists() and cached_path.stat().st_size > 0:
                 clip_path.write_bytes(cached_path.read_bytes())
@@ -261,6 +283,17 @@ def create_vietnamese_dub(
         slot_sec = max(0.25, srt_time_to_seconds(block.end) - srt_time_to_seconds(block.start))
         tasks.append((block, text, start_ms, slot_sec))
 
+    if isinstance(engine, VieNeuTTS) and tts_device == "cuda":  # on CPU/ONNX infer_batch is sequential; threads win there
+        # Fill the cache in one batched call; _render below then just copies cached clips.
+        todo = {}
+        for _block, text, _start_ms, _slot in tasks:
+            cached_path = cache_dir / _cache_key(voice, speed, text)
+            if not (cached_path.exists() and cached_path.stat().st_size > 0):
+                todo[cached_path] = text
+        if todo:
+            for cached_path, wav_bytes in zip(todo, engine.synthesize_batch(list(todo.values()), voice=voice)):
+                cached_path.write_bytes(wav_bytes)
+
     if workers > 1:
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
             for result in pool.map(_render, tasks):
@@ -278,9 +311,6 @@ def create_vietnamese_dub(
     # Pass 2: Regen slow cues (> 2x slot duration)
     def _regen(item: tuple[Path, int, float]) -> None:
         clip_path, _start_ms, slot_sec = item
-        marker = clip_path.with_name(clip_path.name + ".fast")
-        if marker.exists():
-            return
 
         clip_dur = sf.info(str(clip_path)).duration
         if clip_dur <= 0 or slot_sec <= 0:
@@ -294,18 +324,23 @@ def create_vietnamese_dub(
             text = _clean_tts_text(block.text)
             if not text:
                 return
+            cached_path = cache_dir / _cache_key(voice, speed, text)
+            marker = cached_path.with_name(cached_path.name + ".fast")
+            if marker.exists():
+                return
 
             try:
                 fast_speed = min(2.0, speed * SLOW_SPEED_BOOST)
                 wav_bytes, _duration, _latency = engine.synthesize(text, voice=voice, speed=fast_speed)
                 clip_path.write_bytes(wav_bytes)
-                cache_key = f"{voice}_{speed}_{block_index:05d}.wav"
-                (cache_dir / cache_key).write_bytes(wav_bytes)
+                cached_path.write_bytes(wav_bytes)
                 marker.touch()
             except Exception as exc:
                 print(f"[Dubbing Warning] Regen failed for block {block_index}: {exc}")
 
-    if workers > 1:
+    if tts_provider == "vieneu":
+        pass  # VieNeu ignores `speed`, so a "faster" regen would just re-roll the same clip; stretch-fit handles it
+    elif workers > 1:
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
             for _ in pool.map(_regen, clip_paths):
                 pass
@@ -438,6 +473,7 @@ def _mux_replace_audio(video_path: Path, audio_path: Path, output_path: Path, vo
             "-map", "0:v:0", "-map", "1:a:0", "-map", "0:s?",
             "-filter:a", f"volume={voice_volume:.3f},alimiter=limit=0.95",
             "-c:v", "copy", "-c:s", "copy",
+            "-c:a", "aac", "-aac_coder", "fast",  # default twoloop coder: ~4x slower, no audible gain for speech
             "-shortest", str(output_path),
         ]
     )
@@ -464,6 +500,7 @@ def _mux_mixed_audio(
             "-filter_complex", filter_spec,
             "-map", "0:v:0", "-map", "[aout]", "-map", "0:s?",
             "-c:v", "copy", "-c:s", "copy",
+            "-c:a", "aac", "-aac_coder", "fast",  # default twoloop coder: ~4x slower, no audible gain for speech
             "-shortest", str(output_path),
         ]
     )

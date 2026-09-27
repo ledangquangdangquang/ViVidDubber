@@ -10,6 +10,32 @@ class TranscriptionError(RuntimeError):
     pass
 
 
+def group_sentences(segments, pause: float = 0.6, soft_chars: int = 150, seg_chars: int = 250, max_chars: int = 300) -> list[tuple[float, float, str]]:
+    """Regroup Whisper words (across segments) into whole sentences so translation/TTS get full context.
+
+    Cuts at . ? !; when Whisper skipped punctuation, falls back to a pause >= `pause` s (once the text
+    is >= soft_chars), a segment end (once >= seg_chars), and finally a hard max_chars cap.
+    """
+    words = [(w, i == len(seg.words) - 1) for seg in segments for i, w in enumerate(seg.words or [])]
+    chunks: list[tuple[float, float, str]] = []
+    current: list = []
+    for i, (w, seg_end) in enumerate(words):
+        current.append(w)
+        text = "".join(x.word for x in current).strip()
+        gap = words[i + 1][0].start - w.end if i + 1 < len(words) else 0.0
+        if (
+            w.word.strip().endswith((".", "?", "!"))
+            or (gap >= pause and len(text) >= soft_chars)
+            or (seg_end and len(text) >= seg_chars)
+            or len(text) >= max_chars
+        ):
+            chunks.append((current[0].start, current[-1].end, text))
+            current = []
+    if current:
+        chunks.append((current[0].start, current[-1].end, "".join(x.word for x in current).strip()))
+    return [c for c in chunks if c[2]]
+
+
 class FasterWhisperTranscriber:
     def __init__(self, model_name: str = "small", device: str | None = None, compute_type: str | None = None):
         self.model_name = model_name
@@ -43,17 +69,18 @@ class FasterWhisperTranscriber:
                 str(audio_path),
                 vad_filter=True,
                 beam_size=beam_size,
+                word_timestamps=True,
                 **kwargs,
             )
+            chunks = group_sentences(segments)
             blocks = [
                 SubtitleBlock(
                     index=i,
-                    start=seconds_to_srt_time(segment.start),
-                    end=seconds_to_srt_time(segment.end),
-                    text=segment.text.strip(),
+                    start=seconds_to_srt_time(start),
+                    end=seconds_to_srt_time(end),
+                    text=text,
                 )
-                for i, segment in enumerate(segments, 1)
-                if segment.text.strip()
+                for i, (start, end, text) in enumerate(chunks, 1)
             ]
             return blocks, info.language
         except Exception as exc:

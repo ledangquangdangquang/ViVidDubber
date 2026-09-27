@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, field
 from functools import lru_cache
@@ -29,7 +30,7 @@ MAX_JOBS = 50
 JOB_TTL_SECONDS = 3600 * 6  # 6 hours
 
 from pipeline.media import burn_subtitles, download_video, extract_audio, mux_soft_subtitles, probe_media, resolve_video_urls
-from pipeline.subtitle import parse_srt, write_srt
+from pipeline.subtitle import parse_srt, split_for_display, write_srt
 from pipeline.transcribe import FasterWhisperTranscriber
 from pipeline.translate import EnViT5Translator, GoogleTranslator, HuggingFaceTranslator
 from pipeline.tts import EdgeTTSEngine, VieNeuTTS, create_vietnamese_dub
@@ -257,6 +258,8 @@ def _save_clone_ref(upload: UploadFile, dest_dir: Path) -> Path:
         ["ffmpeg", "-y", "-i", str(raw_path), "-t", str(MAX_CLONE_REF_SECONDS),
          "-ar", "24000", "-ac", "1", str(wav_path)],
         capture_output=True,
+        stdin=subprocess.DEVNULL,
+        timeout=300,
     )
     raw_path.unlink(missing_ok=True)
     if result.returncode != 0 or not wav_path.exists():
@@ -676,12 +679,18 @@ def _run_job(job_id: str) -> None:
 
         state = _begin_step(job_id, "Transcribing audio to SRT", 35, original_srt)
         if state is None:
+            if opts.get("whisper_device") == "cuda":
+                _free_gpu()
             transcriber = FasterWhisperTranscriber(
                 model_name=opts["whisper_model"],
                 device=opts.get("whisper_device"),
                 compute_type=opts.get("whisper_compute_type") or None,
             )
             original_blocks = transcriber.transcribe_to_srt(audio_path, original_srt)
+            if transcriber.device != opts.get("whisper_device"):
+                print(f"[Whisper Warning] job {job_id}: fell back to {transcriber.device} (likely out of VRAM)")
+            with JOBS_LOCK:
+                JOBS[job_id].options["whisper_device_used"] = transcriber.device
             _add_file(job_id, "original_srt", original_srt)
         elif state in ("pause", "cancel"):
             return _finish_control(job_id, state)
@@ -712,9 +721,19 @@ def _run_job(job_id: str) -> None:
             else:
                 subtitle_for_export = vi_srt
 
+        # Translation/dub work on whole sentences; only the on-screen subtitles get cut short.
+        display_srt = job_dir / "display.srt"
+        display_srt.write_text(
+            write_srt(split_for_display(
+                parse_srt(subtitle_for_export.read_text(encoding="utf-8")),
+                int(os.environ.get("SUBTITLE_MAX_CHARS", "80")),
+            )),
+            encoding="utf-8",
+        )
+
         state = _begin_step(job_id, "Muxing soft subtitles", 80, output_video)
         if state is None:
-            mux_soft_subtitles(input_path, subtitle_for_export, output_video)
+            mux_soft_subtitles(input_path, display_srt, output_video)
             _add_file(job_id, "output_video", output_video)
         elif state in ("pause", "cancel"):
             return _finish_control(job_id, state)
@@ -744,7 +763,7 @@ def _run_job(job_id: str) -> None:
                 burn_source = output_dubbed_video if opts.get("dub", "false") == "true" else input_path
                 burn_subtitles(
                     burn_source,
-                    subtitle_for_export,
+                    display_srt,
                     output_burned_video,
                     font_size=int(opts.get("subtitle_font_size", 22)),
                 )
@@ -752,13 +771,28 @@ def _run_job(job_id: str) -> None:
             elif state in ("pause", "cancel"):
                 return _finish_control(job_id, state)
 
+        # Close the last step's timing first, or stats would miss it (e.g. the burn step).
+        _set_step(job_id, "Done", 100)
         if opts.get("dub", "false") == "true":
             _log_dub_stats(job_id, input_path)
-
-        _set_step(job_id, "Done", 100)
         _set_job(job_id, status="done")
     except Exception as exc:
         _set_job(job_id, status="error", step="Failed", error=str(exc))
+
+
+def _free_gpu() -> None:
+    """Hand VRAM back before Whisper: CTranslate2 can't reuse PyTorch's cache, so a resident VieNeu
+    singleton plus torch's cached blocks from the last job push Whisper into a silent CPU fallback."""
+    # ponytail: VieNeu reloads once per job (a few seconds); keep it resident only on GPUs with VRAM to spare
+    VieNeuTTS._instance = None
+    VieNeuTTS._device = None
+    gc.collect()
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
 
 
 def _finish_control(job_id: str, state: str) -> None:
@@ -796,7 +830,9 @@ def _log_dub_stats(job_id: str, input_path: Path) -> None:
             "total_elapsed_sec": round(sum(job.step_timings.values()), 1),
             "gpu": _gpu_name(),
             "whisper_device": job.options.get("whisper_device"),
+            "whisper_device_used": job.options.get("whisper_device_used"),
             "translate_device": job.options.get("translate_device"),
+            "translation_provider": job.options.get("translation_provider"),
             "tts_provider": job.options.get("tts_provider", "edge"),
             "tts_device": job.options.get("tts_device"),
         }

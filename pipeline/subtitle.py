@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import re
 
 
@@ -89,6 +89,41 @@ def wrap_subtitle_text(text: str, max_chars_per_line: int = 42, max_lines: int =
         if split_idx != -1:
             return f"{merged[:split_idx].strip()}\n{merged[split_idx+1:].strip()}"
     return "\n".join(lines[:max_lines])
+
+
+def split_for_display(blocks: list[SubtitleBlock], max_chars: int = 80, min_sec: float = 1.2) -> list[SubtitleBlock]:
+    """Split long (already translated) blocks into evenly sized pieces, timing proportional to text length."""
+    out: list[SubtitleBlock] = []
+    for block in blocks:
+        words = block.text.split()
+        n = -(-len(block.text) // max_chars)  # ceil
+        if n <= 1:
+            out.append(replace(block, index=len(out) + 1))
+            continue
+        target = len(block.text) / n
+        pieces: list[str] = []
+        current = ""
+        for word in words:
+            if current and len(pieces) < n - 1 and len(current) + 1 + len(word) / 2 > target:
+                pieces.append(current)
+                current = word
+            else:
+                current = f"{current} {word}".strip()
+        pieces.append(current)
+        start, end = srt_time_to_seconds(block.start), srt_time_to_seconds(block.end)
+        total = sum(len(p) for p in pieces)
+        t = start
+        for piece in pieces:
+            t_next = t + (end - start) * len(piece) / total
+            out.append(SubtitleBlock(len(out) + 1, seconds_to_srt_time(t), seconds_to_srt_time(t_next), piece))
+            t = t_next
+    # Let short blocks linger into the following silence so they stay readable.
+    for cur, nxt in zip(out, out[1:] + [None]):
+        start, end = srt_time_to_seconds(cur.start), srt_time_to_seconds(cur.end)
+        if end - start < min_sec:
+            limit = srt_time_to_seconds(nxt.start) if nxt else start + min_sec
+            cur.end = seconds_to_srt_time(max(end, min(start + min_sec, limit)))
+    return out
 
 
 def write_srt(blocks: list[SubtitleBlock]) -> str:
