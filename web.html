@@ -1090,7 +1090,9 @@ function updateRow(article, job) {
     const link = document.createElement('a');
     link.className = 'download';
     link.href = url;
-    link.textContent = downloadLabels[kind] || kind;
+    link.textContent = kind === 'output_burned_video' && !job.downloads.output_dubbed_video
+      ? 'Video · audio gốc + phụ đề burn'
+      : downloadLabels[kind] || kind;
     if (kind === 'output_burned_video') link.dataset.primary = 'true';
     ui.outputs.appendChild(link);
   });

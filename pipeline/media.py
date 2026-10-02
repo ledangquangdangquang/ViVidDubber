@@ -39,7 +39,11 @@ def download_video(url: str, job_dir: Path, preferred_height: int = 720) -> tupl
 
     ydl_opts = {
         "outtmpl": str(job_dir / "input.%(ext)s"),
-        "format": f"bv*[height<={preferred_height}]+ba/b[height<={preferred_height}]/bv*+ba/b",
+        # Prefer H.264: soft-sub outputs stream-copy the video, and many players show AV1/VP9 as black.
+        "format": (
+            f"bv*[height<={preferred_height}][vcodec^=avc1]+ba[ext=m4a]/"
+            f"bv*[height<={preferred_height}]+ba/b[height<={preferred_height}]/bv*+ba/b"
+        ),
         "merge_output_format": "mp4",
         "quiet": True,
         "no_warnings": True,

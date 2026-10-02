@@ -499,7 +499,8 @@ def download_all():
         if not raw_path or not Path(raw_path).is_file():
             continue
         stem = job.options.get("original_stem", Path(raw_path).stem)
-        entries.append((job.id, stem, Path(raw_path)))
+        suffix = "_vi_dub" if job.options.get("dub") == "true" else "_vi_burned"
+        entries.append((job.id, stem + suffix, Path(raw_path)))
 
     if not entries:
         raise HTTPException(status_code=404, detail="Chưa có video nào lồng tiếng xong để nén.")
@@ -509,9 +510,9 @@ def download_all():
     used_names: set[str] = set()
     with zipfile.ZipFile(tmp.name, "w", zipfile.ZIP_STORED) as zf:
         for job_id, stem, path in entries:
-            name = f"{stem}_vi_dub{path.suffix}"
+            name = f"{stem}{path.suffix}"
             if name in used_names:
-                name = f"{stem}_vi_dub_{job_id[:8]}{path.suffix}"
+                name = f"{stem}_{job_id[:8]}{path.suffix}"
             used_names.add(name)
             zf.write(path, arcname=name)
 
