@@ -687,6 +687,7 @@ def _run_job(job_id: str) -> None:
                 model_name=opts["whisper_model"],
                 device=opts.get("whisper_device"),
                 compute_type=opts.get("whisper_compute_type") or None,
+                free_vram=_free_translators,
             )
             original_blocks = transcriber.transcribe_to_srt(audio_path, original_srt)
             if transcriber.device != opts.get("whisper_device"):
@@ -831,6 +832,25 @@ def _run_job(job_id: str) -> None:
         _set_job(job_id, status="done")
     except Exception as exc:
         _set_job(job_id, status="error", step="Failed", error=str(exc))
+
+
+def _free_translators() -> bool:
+    """Drop the resident translation model (~1.2 GB) so Whisper can retry on GPU: on a 4 GB card a big
+    Whisper (e.g. medium float16) doesn't fit next to it, and the CPU fallback is ~5x slower than the
+    ~11s it takes to reload the translator. Returns False if there was nothing to free."""
+    freed = False
+    for cls in (HuggingFaceTranslator, EnViT5Translator):
+        with cls._lock:
+            freed |= cls._model is not None
+            cls._model = cls._tokenizer = cls._key = None
+    if freed:
+        gc.collect()
+        try:
+            import torch
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+    return freed
 
 
 def _free_gpu() -> None:

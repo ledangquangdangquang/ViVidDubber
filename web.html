@@ -476,7 +476,7 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
             <option value="cpu">CPU</option>
             <option value="cuda" selected>GPU (CUDA)</option>
           </select>
-          <input type="hidden" id="whisperComputeType" name="whisper_compute_type" value="float16">
+          <input type="hidden" id="whisperComputeType" name="whisper_compute_type" value="int8_float16">
           <span class="field-help" id="whisperDeviceHelp">GPU nhanh hơn nhiều; tự quay về CPU nếu lỗi CUDA</span>
         </div>
 
@@ -788,7 +788,7 @@ function updateStartButton() { startBtn.disabled = !selectedVideoUrls().length; 
 const whisperDevice = document.getElementById('whisperDevice');
 const whisperComputeType = document.getElementById('whisperComputeType');
 whisperDevice.addEventListener('change', () => {
-  whisperComputeType.value = whisperDevice.value === 'cuda' ? 'float16' : '';
+  whisperComputeType.value = whisperDevice.value === 'cuda' ? 'int8_float16' : '';
 });
 
   const ttsProvider = document.getElementById('ttsProvider');

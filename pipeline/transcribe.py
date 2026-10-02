@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 import os
 from pathlib import Path
 
@@ -48,10 +49,15 @@ def group_sentences(
 
 
 class FasterWhisperTranscriber:
-    def __init__(self, model_name: str = "small", device: str | None = None, compute_type: str | None = None):
+    def __init__(
+        self, model_name: str = "small", device: str | None = None, compute_type: str | None = None,
+        free_vram: Callable[[], bool] | None = None,
+    ):
         self.model_name = model_name
         self.device = device or os.environ.get("WHISPER_DEVICE", "cpu")
         self.compute_type = compute_type or os.environ.get("WHISPER_COMPUTE_TYPE", "int8")
+        # Called once on a CUDA error before falling back to CPU; returns True if it freed VRAM worth a GPU retry.
+        self.free_vram = free_vram
 
     def transcribe_to_srt(
         self,
@@ -69,6 +75,7 @@ class FasterWhisperTranscriber:
         return blocks
 
     def _run_transcription(self, whisper_model, audio_path: Path, kwargs: dict) -> tuple[list[SubtitleBlock], str]:
+        model = segments = None
         try:
             model = whisper_model(
                 self.model_name,
@@ -95,8 +102,15 @@ class FasterWhisperTranscriber:
             ]
             return blocks, info.language
         except Exception as exc:
-            if self.device != "cpu" and any(m in str(exc).lower() for m in ("cuda", "cublas", "cudnn", "gpu")):
-                self.device = "cpu"
-                self.compute_type = "int8"
-                return self._run_transcription(whisper_model, audio_path, kwargs)
-            raise TranscriptionError(str(exc)) from exc
+            if self.device == "cpu" or not any(m in str(exc).lower() for m in ("cuda", "cublas", "cudnn", "gpu")):
+                raise TranscriptionError(str(exc)) from exc
+            error = str(exc)
+        # Retry outside the except block and after dropping our refs, or the failed model stays in VRAM.
+        model = segments = None
+        free_vram, self.free_vram = self.free_vram, None
+        if free_vram is not None and free_vram():
+            print(f"[Whisper Warning] {error[:160]}; freed VRAM, retrying on {self.device}")
+        else:
+            self.device = "cpu"
+            self.compute_type = "int8"
+        return self._run_transcription(whisper_model, audio_path, kwargs)
