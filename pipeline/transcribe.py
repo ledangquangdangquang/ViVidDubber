@@ -10,16 +10,25 @@ class TranscriptionError(RuntimeError):
     pass
 
 
-def group_sentences(segments, pause: float = 0.6, soft_chars: int = 150, seg_chars: int = 250, max_chars: int = 300) -> list[tuple[float, float, str]]:
+def group_sentences(
+    segments, pause: float = 0.6, soft_chars: int = 150, seg_chars: int = 250, max_chars: int = 300,
+    stray_gap: float = 3.0, stray_chars: int = 20,
+) -> list[tuple[float, float, str]]:
     """Regroup Whisper words (across segments) into whole sentences so translation/TTS get full context.
 
     Cuts at . ? !; when Whisper skipped punctuation, falls back to a pause >= `pause` s (once the text
     is >= soft_chars), a segment end (once >= seg_chars), and finally a hard max_chars cap.
+    Whisper sometimes drops a sentence's first word(s) seconds before the rest (over music/B-roll);
+    a fragment < stray_chars followed by a gap >= stray_gap re-anchors the cue start after the gap,
+    otherwise the sub shows early and the dub finishes long before the cue ends.
     """
     words = [(w, i == len(seg.words) - 1) for seg in segments for i, w in enumerate(seg.words or [])]
     chunks: list[tuple[float, float, str]] = []
     current: list = []
+    start = 0.0
     for i, (w, seg_end) in enumerate(words):
+        if not current:
+            start = w.start
         current.append(w)
         text = "".join(x.word for x in current).strip()
         gap = words[i + 1][0].start - w.end if i + 1 < len(words) else 0.0
@@ -29,10 +38,12 @@ def group_sentences(segments, pause: float = 0.6, soft_chars: int = 150, seg_cha
             or (seg_end and len(text) >= seg_chars)
             or len(text) >= max_chars
         ):
-            chunks.append((current[0].start, current[-1].end, text))
+            chunks.append((start, current[-1].end, text))
             current = []
+        elif gap >= stray_gap and len(text) < stray_chars:
+            start = words[i + 1][0].start
     if current:
-        chunks.append((current[0].start, current[-1].end, "".join(x.word for x in current).strip()))
+        chunks.append((start, current[-1].end, "".join(x.word for x in current).strip()))
     return [c for c in chunks if c[2]]
 
 
