@@ -7,6 +7,7 @@ import time
 import urllib.parse
 import urllib.request
 
+from . import MODEL_LOAD_LOCK
 from .subtitle import SubtitleBlock
 
 
@@ -201,11 +202,12 @@ class EnViT5Translator(_BatchTranslator):
                     ) from exc
                 os.environ.setdefault("CC", "/usr/bin/gcc")
                 import torch
-                self._tokenizer = AutoTokenizer.from_pretrained(self.model)
-                self._model = AutoModelForSeq2SeqLM.from_pretrained(self.model)
-                device = self.device or ("cuda" if torch.cuda.is_available() else "cpu")
-                if device != "cpu":
-                    self._model = self._model.to("cuda")
+                with MODEL_LOAD_LOCK:
+                    self._tokenizer = AutoTokenizer.from_pretrained(self.model)
+                    self._model = AutoModelForSeq2SeqLM.from_pretrained(self.model)
+                    device = self.device or ("cuda" if torch.cuda.is_available() else "cpu")
+                    if device != "cpu":
+                        self._model = self._model.to("cuda")
         return self._model, self._tokenizer
 
     def _translate_texts(self, texts: list[str], source_lang: str, target_lang: str) -> list[str]:
@@ -273,9 +275,10 @@ class HuggingFaceTranslator(_BatchTranslator):
                         self.warnings.append(
                             "bitsandbytes not installed; falling back to FP16 (add with `uv add bitsandbytes`)."
                         )
-                self._model = AutoModelForCausalLM.from_pretrained(self.repo, **load_kwargs)
-                device = self.device or ("cuda" if torch.cuda.is_available() else "cpu")
-                self._model = self._model.to("cuda" if device != "cpu" else "cpu")
+                with MODEL_LOAD_LOCK:
+                    self._model = AutoModelForCausalLM.from_pretrained(self.repo, **load_kwargs)
+                    device = self.device or ("cuda" if torch.cuda.is_available() else "cpu")
+                    self._model = self._model.to("cuda" if device != "cpu" else "cpu")
         return self._model, self._tokenizer
 
     def _translate_texts(self, texts: list[str], source_lang: str, target_lang: str) -> list[str]:

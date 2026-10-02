@@ -12,12 +12,14 @@ import time
 
 import soundfile as sf
 
+from . import MODEL_LOAD_LOCK
 from .media import probe_media, require_tool, run_command
 from .subtitle import SubtitleBlock, srt_time_to_seconds
 
 SAMPLE_RATE = 44100
 SLOW_RATIO_THRESHOLD = 2.0
 SLOW_SPEED_BOOST = 1.25
+DUB_PHASES: dict[str, float] = {}  # phase -> seconds of the last create_vietnamese_dub (logged to jobs/stats.json)
 
 
 class DubbingError(RuntimeError):
@@ -160,6 +162,7 @@ class VieNeuTTS:
     _lock = __import__("threading").Lock()
 
     _device = None
+    _ref_voices: dict[str, dict] = {}  # ref_audio path -> encoded voice; numpy on CPU, survives model reloads
 
     def __init__(self, default_voice: str = "Minh Quân", ref_audio: str | None = None, device: str | None = None):
         self.default_voice = default_voice
@@ -178,15 +181,30 @@ class VieNeuTTS:
                 except ImportError as exc:
                     raise DubbingError("VieNeu-TTS needs 'vieneu'. Install with: uv add vieneu") from exc
                 os.environ.setdefault("CC", "/usr/bin/gcc")
-                v = Vieneu(device=device)
+                with MODEL_LOAD_LOCK:
+                    v = Vieneu(device=device)
                 v.list_preset_voices()
                 type(self)._instance = v
                 type(self)._device = device
             # vieneu re-denoises + re-encodes ref_audio on CPU (~2.4s) on every infer(); encode once.
             if self.ref_audio and self._ref_voice is None:
-                emb, codes = self._instance.encode_reference(self.ref_audio)
-                self._ref_voice = {"speaker_emb": emb, "codes": codes}
+                if self.ref_audio not in self._ref_voices:
+                    emb, codes = self._instance.encode_reference(self.ref_audio)
+                    self._ref_voices[self.ref_audio] = {"speaker_emb": emb, "codes": codes}
+                self._ref_voice = self._ref_voices[self.ref_audio]
         return self._instance
+
+    def import_backend(self) -> None:
+        """Call on the main thread before preload() runs in a background thread: importing transformers from
+        two threads at once (vieneu's torch engine + the HF translator) leaves it half-initialised and the
+        loser fails with "cannot import name 'PretrainedConfig'". The ONNX/CPU engine doesn't use transformers."""
+        if (self.device or os.environ.get("VIENEU_DEVICE", "cpu")) != "cpu":
+            import vieneu._v3_turbo_engine.inference_v3_turbo  # noqa: F401
+
+    def preload(self) -> None:
+        """Load the model, encode the clone ref and warm up the kernels (~13s on an RTX 3050), so a caller
+        can overlap it with other work. Not thread-safe against a concurrent synthesize: join first."""
+        self.synthesize_batch(["Xin chào."])
 
     def synthesize(
         self,
@@ -273,6 +291,15 @@ def create_vietnamese_dub(
             print(f"[Dubbing Warning] Skipped block {block.index}: {exc}")
             return None
 
+    DUB_PHASES.clear()
+    phase_t = time.time()
+
+    def _phase(name: str) -> None:
+        nonlocal phase_t
+        now = time.time()
+        DUB_PHASES[name] = round(now - phase_t, 1)
+        phase_t = now
+
     # Pass 1: generate TTS with cache
     tasks: list[tuple[SubtitleBlock, str, int, float]] = []
     for block in blocks:
@@ -307,6 +334,7 @@ def create_vietnamese_dub(
 
     if not clip_paths:
         raise DubbingError("No TTS clips were generated.")
+    _phase("synth_sec")
 
     # Pass 2: Regen slow cues (> 2x slot duration)
     def _regen(item: tuple[Path, int, float]) -> None:
@@ -349,19 +377,19 @@ def create_vietnamese_dub(
             _regen(item)
 
     # Stretch fit
-    final_clips: list[tuple[Path, int]] = []
-    for clip_path, start_ms, slot_sec in clip_paths:
-        target_ms = int(round(slot_sec * 1000))
-        stretched = _stretch_one_clip(clip_path, target_ms)
-        if stretched:
-            final_clips.append((stretched, start_ms))
-        else:
-            final_clips.append((clip_path, start_ms))
+    def _fit(item: tuple[Path, int, float]) -> tuple[Path, int]:
+        clip_path, start_ms, slot_sec = item
+        return _stretch_one_clip(clip_path, int(round(slot_sec * 1000))) or clip_path, start_ms
 
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        final_clips: list[tuple[Path, int]] = list(pool.map(_fit, clip_paths))
+
+    _phase("fit_sec")
     media = probe_media(video_path)
     total_duration = float(media["format"]["duration"])
     _mix_delayed_clips(final_clips, dub_audio, total_duration)
 
+    _phase("mix_sec")
     for clip_path, _ in final_clips:
         if "_stretched" in clip_path.name:
             try:
@@ -373,6 +401,7 @@ def create_vietnamese_dub(
         _mux_mixed_audio(video_path, dub_audio, output_path, background_volume, voice_volume)
     else:
         _mux_replace_audio(video_path, dub_audio, output_path, voice_volume)
+    _phase("mux_sec")
     return output_path
 
 

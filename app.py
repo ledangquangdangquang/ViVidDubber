@@ -29,11 +29,11 @@ MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
 MAX_JOBS = 50
 JOB_TTL_SECONDS = 3600 * 6  # 6 hours
 
-from pipeline.media import burn_subtitles, download_video, extract_audio, mux_soft_subtitles, probe_media, resolve_video_urls
+from pipeline.media import burn_subtitles, download_video, extract_audio, mux_soft_subtitles, probe_media, replace_audio, resolve_video_urls
 from pipeline.subtitle import parse_srt, split_for_display, write_srt
 from pipeline.transcribe import FasterWhisperTranscriber
 from pipeline.translate import EnViT5Translator, GoogleTranslator, HuggingFaceTranslator
-from pipeline.tts import EdgeTTSEngine, VieNeuTTS, create_vietnamese_dub
+from pipeline.tts import DUB_PHASES, EdgeTTSEngine, VieNeuTTS, create_vietnamese_dub
 
 PREVIEW_TEXT = "Xin chào, đây là bản nghe thử giọng đọc tiếng Việt."
 
@@ -655,6 +655,7 @@ def _run_job(job_id: str) -> None:
     output_video = job_dir / f"{input_stem}_vi_soft.mp4"
     output_dubbed_video = job_dir / f"{input_stem}_vi_dub.mp4"
     output_burned_video = job_dir / f"{input_stem}_vi_burned.mp4"
+    burned_video_only = job_dir / "burned_video_only.mp4"
 
     try:
         with JOBS_LOCK:
@@ -698,6 +699,34 @@ def _run_job(job_id: str) -> None:
         else:
             original_blocks = parse_srt(original_srt.read_text(encoding="utf-8"))
 
+        dub = opts.get("dub", "false") == "true"
+        tts_preload, preload_phases = None, {}
+        DUB_PHASES.clear()  # a resumed job that skips the dub step must not log the previous job's phases
+        if dub and opts.get("tts_provider", "edge") == "vieneu" and not output_dubbed_video.exists():
+            # Model load + clone-ref encode + warm-up is ~13s per job (_free_gpu drops VieNeu before Whisper);
+            # do it now, while translation runs, instead of inside the dub step.
+            preload_engine = VieNeuTTS(
+                default_voice=opts.get("tts_voice") or "Minh Quân",
+                ref_audio=opts.get("tts_ref_audio") or None,
+                device=opts.get("tts_device", "cpu"),
+            )
+
+            def _preload_tts() -> None:
+                t = time.time()
+                try:
+                    preload_engine.preload()
+                except Exception as exc:  # the dub step loads it again and reports the real error
+                    print(f"[VieNeu Warning] preload failed: {exc}")
+                    preload_phases["preload_error"] = str(exc)[:200]
+                preload_phases["preload_sec"] = round(time.time() - t, 1)
+
+            try:
+                preload_engine.import_backend()
+            except Exception as exc:  # e.g. vieneu not installed: the dub step reports it
+                print(f"[VieNeu Warning] backend import failed: {exc}")
+            tts_preload = threading.Thread(target=_preload_tts, daemon=True)
+            tts_preload.start()
+
         subtitle_for_export = original_srt
         if opts.get("translate", "true") == "true" and original_blocks:
             state = _begin_step(job_id, "Translating subtitles to Vietnamese", 65, vi_srt if vi_srt.exists() else None)
@@ -732,6 +761,21 @@ def _run_job(job_id: str) -> None:
             encoding="utf-8",
         )
 
+        burn = opts.get("export_mode") == "burn"
+        font_size = int(opts.get("subtitle_font_size", 22))
+        burn_thread, burn_errors = None, []
+        if burn and dub and not output_burned_video.exists() and not burned_video_only.exists():
+            # The burn doesn't need the dub audio: encode the picture now, in parallel with TTS, and
+            # stream-copy the dub audio in afterwards. Hides most of the burn time behind the dub step.
+            def _burn_video_only() -> None:
+                try:
+                    burn_subtitles(input_path, display_srt, burned_video_only, font_size=font_size, keep_audio=False)
+                except Exception as exc:
+                    burn_errors.append(exc)
+
+            burn_thread = threading.Thread(target=_burn_video_only, daemon=True)
+            burn_thread.start()
+
         state = _begin_step(job_id, "Muxing soft subtitles", 80, output_video)
         if state is None:
             mux_soft_subtitles(input_path, display_srt, output_video)
@@ -739,10 +783,14 @@ def _run_job(job_id: str) -> None:
         elif state in ("pause", "cancel"):
             return _finish_control(job_id, state)
 
-        if opts.get("dub", "false") == "true" and subtitle_for_export.exists():
+        if dub and subtitle_for_export.exists():
             tts_label = "VieNeu-TTS" if opts.get("tts_provider", "edge") == "vieneu" else "Edge-TTS"
             state = _begin_step(job_id, f"Generating Vietnamese voice-over ({tts_label})", 90, output_dubbed_video)
             if state is None:
+                if tts_preload is not None:
+                    t = time.time()
+                    tts_preload.join()
+                    preload_phases["preload_wait_sec"] = round(time.time() - t, 1)
                 dub_blocks = parse_srt(subtitle_for_export.read_text(encoding="utf-8"))
                 bg_vol = float(opts.get("background_volume", "0.15"))
                 vc_vol = float(opts.get("voice_volume", "1.0"))
@@ -758,24 +806,28 @@ def _run_job(job_id: str) -> None:
             elif state in ("pause", "cancel"):
                 return _finish_control(job_id, state)
 
-        if opts.get("export_mode") == "burn":
+        if burn:
             state = _begin_step(job_id, "Burning subtitles into video", 96, output_burned_video)
             if state is None:
-                burn_source = output_dubbed_video if opts.get("dub", "false") == "true" else input_path
-                burn_subtitles(
-                    burn_source,
-                    display_srt,
-                    output_burned_video,
-                    font_size=int(opts.get("subtitle_font_size", 22)),
-                )
+                if dub and output_dubbed_video.exists():
+                    if burn_thread is not None:
+                        burn_thread.join()
+                        if burn_errors:
+                            raise burn_errors[0]
+                    if not burned_video_only.exists():  # resumed job: the background burn never ran
+                        burn_subtitles(input_path, display_srt, burned_video_only, font_size=font_size, keep_audio=False)
+                    replace_audio(burned_video_only, output_dubbed_video, output_burned_video)
+                    burned_video_only.unlink(missing_ok=True)
+                else:
+                    burn_subtitles(input_path, display_srt, output_burned_video, font_size=font_size)
                 _add_file(job_id, "output_burned_video", output_burned_video)
             elif state in ("pause", "cancel"):
                 return _finish_control(job_id, state)
 
         # Close the last step's timing first, or stats would miss it (e.g. the burn step).
         _set_step(job_id, "Done", 100)
-        if opts.get("dub", "false") == "true":
-            _log_dub_stats(job_id, input_path)
+        if dub:
+            _log_dub_stats(job_id, input_path, {**preload_phases, **DUB_PHASES})
         _set_job(job_id, status="done")
     except Exception as exc:
         _set_job(job_id, status="error", step="Failed", error=str(exc))
@@ -812,7 +864,7 @@ def _gpu_name() -> str:
     return "cpu"
 
 
-def _log_dub_stats(job_id: str, input_path: Path) -> None:
+def _log_dub_stats(job_id: str, input_path: Path, dub_phases: dict | None = None) -> None:
     """Append video duration vs. total dub time for this GPU config to jobs/stats.json."""
     try:
         video_duration = float(probe_media(input_path)["format"]["duration"])
@@ -836,6 +888,7 @@ def _log_dub_stats(job_id: str, input_path: Path) -> None:
             "translation_provider": job.options.get("translation_provider"),
             "tts_provider": job.options.get("tts_provider", "edge"),
             "tts_device": job.options.get("tts_device"),
+            "dub_phases": dub_phases or {},
         }
         rows = _read_stats_file(_STATS_FILE)
         rows.append(row)
