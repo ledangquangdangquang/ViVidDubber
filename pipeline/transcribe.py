@@ -88,6 +88,10 @@ class FasterWhisperTranscriber:
                 vad_filter=True,
                 beam_size=beam_size,
                 word_timestamps=True,
+                # Conditioned on the previous window, one window that drops punctuation makes every later one drop
+                # it too (91-min interview: none after 9:47 -> 354 run-on cues of ~207 chars). Independent windows
+                # kept it all the way through (1,279 sentence marks) and ran a bit faster.
+                condition_on_previous_text=False,
                 **kwargs,
             )
             chunks = group_sentences(segments)
