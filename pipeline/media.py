@@ -198,6 +198,6 @@ def replace_audio(video_path: Path, audio_source: Path, output_path: Path) -> Pa
     require_tool("ffmpeg")
     run_command([
         "ffmpeg", "-y", "-i", str(video_path), "-i", str(audio_source),
-        "-map", "0:v:0", "-map", "1:a?", "-map", "1:s?", "-c", "copy", "-shortest", str(output_path),
+        "-map", "0:v:0", "-map", "1:a?", "-map", "1:s?", "-c", "copy", str(output_path),  # no -shortest: see tts.py
     ])
     return output_path

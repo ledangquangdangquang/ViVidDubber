@@ -503,7 +503,7 @@ def _mux_replace_audio(video_path: Path, audio_path: Path, output_path: Path, vo
             "-filter:a", f"volume={voice_volume:.3f},alimiter=limit=0.95",
             "-c:v", "copy", "-c:s", "copy",
             "-c:a", "aac", "-aac_coder", "fast",  # default twoloop coder: ~4x slower, no audible gain for speech
-            "-shortest", str(output_path),
+            str(output_path),  # no -shortest: it also counts the sub stream and cuts the tail after the last cue
         ]
     )
 
@@ -530,6 +530,6 @@ def _mux_mixed_audio(
             "-map", "0:v:0", "-map", "[aout]", "-map", "0:s?",
             "-c:v", "copy", "-c:s", "copy",
             "-c:a", "aac", "-aac_coder", "fast",  # default twoloop coder: ~4x slower, no audible gain for speech
-            "-shortest", str(output_path),
+            str(output_path),  # no -shortest: it also counts the sub stream and cuts the tail after the last cue
         ]
     )
