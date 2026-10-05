@@ -1,6 +1,6 @@
 <h1 align="center">Vietnamese AI Video Dubber</h1>
 
-<p align="center">Lồng tiếng video sang tiếng Việt, chạy hoàn toàn trên máy, hoàn toàn miễn phí — nhận diện Whisper, dịch AI, thuyết minh VieNeu-TTS / Edge-TTS. Không API key, không cloud, 0đ.</p>
+<p align="center">Lồng tiếng video sang tiếng Việt, chạy hoàn toàn trên máy, hoàn toàn miễn phí — nhận diện Whisper, dịch AI, thuyết minh VieNeu-TTS / Edge-TTS. Không API key, không cloud.</p>
 
 <p align="center">
 <a href="README.md">English</a> | Tiếng Việt
@@ -45,7 +45,7 @@ Số liệu thật từ `jobs/stats.json` (thời gian cả job: nhận diện, 
 | 91 phút 8 giây | 11 phút 30 giây | 0.13× |
 
 <p align="center">
-<img src="docs/screenshots/benchmark.png" alt="Benchmark: thời gian xử lý và tỉ lệ xử lý/video theo độ dài video, 9 job thật" width="60%">
+<img src="docs/screenshots/benchmark.png" alt="Benchmark: thời gian xử lý và tỉ lệ xử lý/video theo độ dài video, 9 job thật" width="100%">
 </p>
 
 Biểu đồ (lấy từ trang "Benchmark Thuyết Minh") vẽ 9 job chạy GPU, video từ 5 phút trở lên, ghi từ 2026-10-02 sau các commit tăng tốc. Mọi chấm đều nằm dưới đường 1×, tức xử lý nhanh hơn thời lượng video.

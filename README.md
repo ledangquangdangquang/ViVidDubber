@@ -1,6 +1,6 @@
 <h1 align="center">Vietnamese AI Video Dubber</h1>
 
-<p align="center">Fully local, fully free Vietnamese video dubbing — Whisper transcription, AI translation, and VieNeu-TTS / Edge-TTS voice-over. No API keys, no cloud, $0.</p>
+<p align="center">Fully local, fully free Vietnamese video dubbing — Whisper transcription, AI translation, and VieNeu-TTS / Edge-TTS voice-over. No API keys, no cloud.</p>
 
 <p align="center">
 English | <a href="README_vi.md">Tiếng Việt</a>
@@ -45,7 +45,7 @@ Real runs from `jobs/stats.json` (end-to-end job time: transcription, translatio
 | 91 min 8 s | 11 min 30 s | 0.13× |
 
 <p align="center">
-<img src="docs/screenshots/benchmark.png" alt="Benchmark: processing time and processing/video ratio against video length, 9 real jobs" width="60%">
+<img src="docs/screenshots/benchmark.png" alt="Benchmark: processing time and processing/video ratio against video length, 9 real jobs" width="100%">
 </p>
 
 The chart (from the "Benchmark Thuyết Minh" page, Vietnamese labels) plots the 9 GPU jobs of 5 minutes or longer recorded since 2026-10-02, after the speed-up commits. Every dot is below the 1× line, i.e. faster than the video plays.
