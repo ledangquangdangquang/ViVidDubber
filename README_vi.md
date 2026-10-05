@@ -44,9 +44,9 @@ Số liệu thật từ `jobs/stats.json` (thời gian cả job: nhận diện, 
 | 36 phút 27 giây | 6 phút 52 giây | 0.19× |
 | 91 phút 8 giây | 11 phút 30 giây | 0.13× |
 
-<p align="center">
-<img src="docs/screenshots/benchmark.png" alt="Benchmark: thời gian xử lý và tỉ lệ xử lý/video theo độ dài video, 9 job thật" width="100%">
-</p>
+| Thời gian xử lý theo độ dài video | Tỉ lệ xử lý / độ dài video |
+|---|---|
+| ![Thời gian xử lý theo độ dài video, 9 job thật](docs/screenshots/benchmark-time-vi.png) | ![Tỉ lệ xử lý/video theo độ dài video; mọi job đều dưới đường 1x](docs/screenshots/benchmark-ratio-vi.png) |
 
 Biểu đồ (lấy từ trang "Benchmark Thuyết Minh") vẽ 9 job chạy GPU, video từ 5 phút trở lên, ghi từ 2026-10-02 sau các commit tăng tốc. Mọi chấm đều nằm dưới đường 1×, tức xử lý nhanh hơn thời lượng video.
 
