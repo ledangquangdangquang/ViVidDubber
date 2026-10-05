@@ -381,7 +381,7 @@ async def resolve_url(video_url: str = Form("")):
         items = resolve_video_urls(url)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Failed to resolve URL: {exc}")
-    return {"videos": [{"url": u, "title": t} for u, t in items]}
+    return {"videos": [{"url": u, "title": t, "channel": c} for u, t, c in items]}
 
 
 @app.post("/api/jobs")
@@ -406,6 +406,8 @@ async def create_job(
     voice_volume: float = Form(2.0),
     flip: str = Form("false"),
     cover_bottom: float = Form(0.0),
+    show_source: str = Form("false"),
+    source_credit: str = Form(""),
     trim_start: str = Form(""),
     trim_end: str = Form(""),
     clone_ref_audio: UploadFile = File(None),
@@ -491,6 +493,8 @@ async def create_job(
             "voice_volume": str(voice_volume),
             "flip": flip,
             "cover_bottom": str(max(0.0, min(0.4, cover_bottom))),
+            "show_source": show_source,
+            "source_credit": source_credit.strip()[:100],
             "trim_start": trim_start,
             "trim_end": trim_end,
             "video_url": video_url,
@@ -685,9 +689,10 @@ def _run_job(job_id: str) -> None:
         if video_url:
             state = _begin_step(job_id, "Downloading video from YouTube", 10, input_path if input_path.exists() else None)
             if state is None:
-                input_path, source_title = download_video(video_url, job_dir)
+                input_path, source_title, source_channel = download_video(video_url, job_dir)
                 _add_file(job_id, "input", input_path)
-                _set_job(job_id, options={**opts, "original_stem": source_title})
+                opts.update(original_stem=source_title, source_channel=source_channel)  # kept for a resumed job
+                _set_job(job_id, options=dict(opts))
             elif state in ("pause", "cancel"):
                 return _finish_control(job_id, state)
 
@@ -797,13 +802,15 @@ def _run_job(job_id: str) -> None:
         font_size = int(opts.get("subtitle_font_size", 22))
         flip = opts.get("flip") == "true"
         cover = float(opts.get("cover_bottom", 0))
+        source_name = opts.get("source_credit") or opts.get("source_channel", "")  # typed name wins over the YouTube channel
+        credit = f"Cre: {source_name}" if opts.get("show_source") == "true" and source_name else ""
         burn_thread, burn_errors = None, []
         if burn and dub and not output_burned_video.exists() and not burned_video_only.exists():
             # The burn doesn't need the dub audio: encode the picture now, in parallel with TTS, and
             # stream-copy the dub audio in afterwards. Hides most of the burn time behind the dub step.
             def _burn_video_only() -> None:
                 try:
-                    burn_subtitles(input_path, display_srt, burned_video_only, font_size=font_size, flip=flip, cover=cover, keep_audio=False)
+                    burn_subtitles(input_path, display_srt, burned_video_only, font_size=font_size, flip=flip, cover=cover, credit=credit, keep_audio=False)
                 except Exception as exc:
                     burn_errors.append(exc)
 
@@ -849,11 +856,11 @@ def _run_job(job_id: str) -> None:
                         if burn_errors:
                             raise burn_errors[0]
                     if not burned_video_only.exists():  # resumed job: the background burn never ran
-                        burn_subtitles(input_path, display_srt, burned_video_only, font_size=font_size, flip=flip, cover=cover, keep_audio=False)
+                        burn_subtitles(input_path, display_srt, burned_video_only, font_size=font_size, flip=flip, cover=cover, credit=credit, keep_audio=False)
                     replace_audio(burned_video_only, output_dubbed_video, output_burned_video)
                     burned_video_only.unlink(missing_ok=True)
                 else:
-                    burn_subtitles(input_path, display_srt, output_burned_video, font_size=font_size, flip=flip, cover=cover)
+                    burn_subtitles(input_path, display_srt, output_burned_video, font_size=font_size, flip=flip, cover=cover, credit=credit)
                 _add_file(job_id, "output_burned_video", output_burned_video)
             elif state in ("pause", "cancel"):
                 return _finish_control(job_id, state)

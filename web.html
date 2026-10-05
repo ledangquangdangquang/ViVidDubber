@@ -64,7 +64,6 @@ a { color: var(--color-accent); }
 .prompt .sigil { color: var(--color-accent); }
 .prompt .cmd { font-weight: 700; }
 .prompt .arg { color: var(--color-muted); }
-.caret { display: inline-block; width: 1ch; color: var(--color-accent); animation: blink 1.05s steps(2) infinite; }
 
 /* ---- buttons: bracketed text, no fills except the one primary ---- */
 .btn {
@@ -347,14 +346,13 @@ details.more[open] > summary { margin-block-end: var(--space-sm); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition-duration: 0.01ms !important; }
 }
-@keyframes blink { 50% { opacity: 0; } }
 @keyframes sheet-in { from { transform: translateX(2rem); opacity: 0; } }
 @keyframes spin-dots { 0% { content: "⠋"; } 25% { content: "⠙"; } 50% { content: "⠸"; } 75% { content: "⠴"; } }
 </style>
 </head>
 <body>
 <header class="bar">
-  <h1 class="prompt"><span class="sigil">&gt;</span> <span class="cmd">vividdubber</span> <span class="arg">queue --dub vi</span><span class="caret" aria-hidden="true">▮</span></h1>
+  <h1 class="prompt"><span class="sigil">&gt;</span> <span class="cmd">vividdubber</span> <span class="arg">queue --dub vi</span></h1>
   <div class="bar-actions">
     <div class="lang-toggle" role="group" data-i18n-attr="aria-label:lang_group">
       <button type="button" data-lang="en">EN</button>
@@ -488,6 +486,12 @@ details.more[open] > summary { margin-block-end: var(--space-sm); }
           <span class="field-help" data-i18n="cover_help">Chinese/Japanese videos with burned-in subtitles: ~12–18%.</span>
         </div>
         <label class="check"><input name="flip" value="true" type="checkbox"><span class="box" aria-hidden="true"></span><span data-i18n="flip">flip video horizontally</span></label>
+        <label class="check"><input id="showSource" name="show_source" value="true" type="checkbox"><span class="box" aria-hidden="true"></span><span data-i18n="show_source">show the source name on the video</span></label>
+        <div class="field" id="sourceCreditField" hidden>
+          <label for="sourceCredit" data-i18n="source_name">source name</label>
+          <input class="text-input" id="sourceCredit" name="source_credit" type="text" maxlength="100" data-i18n-attr="placeholder:source_ph">
+          <span class="field-help" data-i18n="source_help">Burned as "Cre: …" in the top-left corner. Empty = channel name for YouTube links.</span>
+        </div>
       </section>
 
       <section class="group">
@@ -609,6 +613,8 @@ const I18N = {
     translate_with: 'translate with', prov_envit5: 'EnViT5 (offline, English only)', translate_vi: 'translate to Vietnamese',
     g_burn: 'burned subtitles', font_size: 'font size', cover: 'blur original subtitles at the bottom',
     cover_help: 'Chinese/Japanese videos with burned-in subtitles: ~12–18%.', off: 'Off', flip: 'flip video horizontally',
+    show_source: 'show the source name on the video', source_name: 'source name', source_ph: 'YouTube: channel name, filled in for you',
+    source_help: 'Burned as "Cre: …" in the top-left corner. Empty = channel name for YouTube links.',
     g_dub: 'voice-over', dub_toggle: 'Vietnamese voice-over, keep original audio low',
     bg_audio: 'original audio', vi_voice: 'Vietnamese voice', voice: 'voice', listen: 'listen', listen_title: 'Preview this voice',
     clone: 'voice clone (VieNeu)', saved_voice: 'saved voice', none_opt: '— none —',
@@ -668,6 +674,8 @@ const I18N = {
     translate_with: 'dịch bằng', prov_envit5: 'EnViT5 (offline, chỉ tiếng Anh)', translate_vi: 'dịch sang tiếng Việt',
     g_burn: 'phụ đề burn', font_size: 'cỡ chữ', cover: 'làm mờ phụ đề gốc ở đáy',
     cover_help: 'Video Trung/Nhật có phụ đề in sẵn: ~12–18%.', off: 'Tắt', flip: 'lật video ngang',
+    show_source: 'ghi tên nguồn lên video', source_name: 'tên nguồn', source_ph: 'YouTube: tự điền tên kênh',
+    source_help: 'Hiện thành "Cre: …" ở góc trên trái. Để trống = tên kênh với link YouTube.',
     g_dub: 'lồng tiếng', dub_toggle: 'lồng tiếng Việt, giữ audio gốc nhỏ',
     bg_audio: 'audio gốc', vi_voice: 'giọng Việt', voice: 'giọng đọc', listen: 'nghe', listen_title: 'Nghe thử giọng',
     clone: 'clone giọng (VieNeu)', saved_voice: 'giọng đã lưu', none_opt: '— không dùng —',
@@ -1012,6 +1020,7 @@ resolveBtn.addEventListener('click', async () => {
     if (!response.ok) throw new Error(await response.text());
     const data = await response.json();
     resolvedVideos = data.videos || [];
+    autofillSourceCredit(resolvedVideos);
     renderVideoList();
   } catch (error) {
     formError.textContent = t('resolve_failed', { msg: error.message });
@@ -1066,6 +1075,21 @@ whisperDevice.addEventListener('change', () => {
 });
 
 function updateVolumeVisibility() { volumeControls.hidden = !dubToggle.checked; }
+
+// Source credit: the name field shows with its checkbox; analyzing a YouTube link fills in the channel
+// unless the user typed a name (dataset.auto marks a value we filled in ourselves).
+const showSource = document.getElementById('showSource');
+const sourceCredit = document.getElementById('sourceCredit');
+const sourceCreditField = document.getElementById('sourceCreditField');
+showSource.addEventListener('change', () => { sourceCreditField.hidden = !showSource.checked; });
+sourceCredit.addEventListener('input', () => { delete sourceCredit.dataset.auto; });
+function autofillSourceCredit(videos) {
+  if (sourceCredit.value && !sourceCredit.dataset.auto) return;
+  const channels = [...new Set(videos.map(v => v.channel).filter(Boolean))];
+  // One channel: show it. Mixed playlist: leave empty so the server uses each video's own channel.
+  sourceCredit.value = channels.length === 1 ? channels[0] : '';
+  sourceCredit.dataset.auto = '1';
+}
 dubToggle.addEventListener('change', updateVolumeVisibility);
 subtitleFontSize.addEventListener('input', () => { subtitleFontSizeVal.textContent = `${subtitleFontSize.value}px`; });
 coverBottom.addEventListener('input', () => { coverBottomVal.textContent = coverBottom.value === '0' ? t('off') : `${coverBottom.value}%`; });

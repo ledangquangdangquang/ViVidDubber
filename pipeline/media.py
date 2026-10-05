@@ -14,8 +14,12 @@ class MediaToolError(RuntimeError):
     pass
 
 
-def resolve_video_urls(url: str) -> list[tuple[str, str]]:
-    """Expand a YouTube link into a list of (url, title) for each video (single video → [(url, title)])."""
+def _channel(info: dict) -> str:
+    return info.get("channel") or info.get("uploader") or ""
+
+
+def resolve_video_urls(url: str) -> list[tuple[str, str, str]]:
+    """Expand a YouTube link into (url, title, channel) per video (single video → one item)."""
     import yt_dlp
 
     ydl_opts = {
@@ -30,15 +34,15 @@ def resolve_video_urls(url: str) -> list[tuple[str, str]]:
         items = []
         for entry in info.get("entries") or []:
             if entry and entry.get("url"):
-                items.append((entry["url"], entry.get("title") or "Untitled"))
+                items.append((entry["url"], entry.get("title") or "Untitled", _channel(entry) or _channel(info)))
         if not items:
-            items = [(url, info.get("title") or "Untitled")]
+            items = [(url, info.get("title") or "Untitled", _channel(info))]
         return items
-    return [(url, info.get("title") or "Untitled")]
+    return [(url, info.get("title") or "Untitled", _channel(info))]
 
 
-def download_video(url: str, job_dir: Path, preferred_height: int = 720) -> tuple[Path, str]:
-    """Download a single YouTube video via yt-dlp. Returns (input_path, title)."""
+def download_video(url: str, job_dir: Path, preferred_height: int = 720) -> tuple[Path, str, str]:
+    """Download a single YouTube video via yt-dlp. Returns (input_path, title, channel)."""
     import yt_dlp
 
     ydl_opts = {
@@ -55,11 +59,12 @@ def download_video(url: str, job_dir: Path, preferred_height: int = 720) -> tupl
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
-        title = (info.get("entries") or [info])[0].get("title") or "video"
+        video = (info.get("entries") or [info])[0]
+        title = video.get("title") or "video"
     files = sorted(job_dir.glob("input.*"))
     if not files:
         raise MediaToolError(f"No video downloaded from {url}")
-    return files[0], title
+    return files[0], title, _channel(video)
 
 
 def require_tool(tool_name: str) -> None:
@@ -168,12 +173,20 @@ def _video_encoder() -> tuple[list[str], dict | None]:
     return _X264_ARGS, None
 
 
+def _filter_path(path: Path) -> str:
+    """A file path quoted for an ffmpeg filter option (Windows backslashes, ':' and "'" escaped)."""
+    return "'" + str(path).replace("\\", "/").replace(":", "\\:").replace("'", "\\'") + "'"
+
+
 def burn_subtitles(video_path: Path, srt_path: Path, output_path: Path, font_size: int = 22, keep_audio: bool = True, flip: bool = False,
-                   cover: float = 0.0) -> Path:
+                   cover: float = 0.0, credit: str = "") -> Path:
     require_tool("ffmpeg")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     font_size = max(8, min(72, font_size))
-    escaped_srt = str(srt_path).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
+    credit_file = output_path.parent / "source_credit.txt"
+    if credit:
+        # Read from a file with expansion off: channel names carry ':', quotes and '%' that drawtext would parse.
+        credit_file.write_text(credit, encoding="utf-8")
     codec_args, env = _video_encoder()
     # Write to a unique temp name: a resumed job may burn the same output while a background burn is still running.
     part = output_path.with_name(f"{output_path.stem}.{os.getpid()}-{threading.get_ident()}.part{output_path.suffix}")
@@ -184,7 +197,9 @@ def burn_subtitles(video_path: Path, srt_path: Path, output_path: Path, font_siz
         # hflip first so the subs stay readable; `cover` blurs the bottom band (the source's own hardsubs) under ours.
         "-vf", ("hflip," if flip else "")
         + (f"split[v][b];[b]crop=iw:ih*{cover:.2f}:0:ih*{1 - cover:.2f},gblur=sigma=40[bl];[v][bl]overlay=0:H-h," if cover > 0 else "")
-        + f"subtitles='{escaped_srt}':force_style='FontSize={font_size},Outline=1,Shadow=0,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'",
+        + f"subtitles={_filter_path(srt_path)}:force_style='FontSize={font_size},Outline=1,Shadow=0,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'"
+        + (f",drawtext=textfile={_filter_path(credit_file)}:expansion=none:font=Sans:fontsize=h*0.035:fontcolor=white"
+           ":box=1:boxcolor=black@0.5:boxborderw=10:x=w*0.025:y=h*0.035" if credit else ""),
         *codec_args,
         *(["-c:a", "copy"] if keep_audio else ["-an"]),
         str(part),

@@ -25,7 +25,7 @@ video -> (optional cut) -> audio -> subtitles (Whisper) -> translate to Vietname
 - **Speech-to-text**: Faster-Whisper on GPU (falls back to CPU), source language English, Chinese or Japanese.
 - **Translation**: HuggingFace Hy-MT2-1.8B (offline, 4-bit, default), Google Translate (online, free), or EnViT5 (offline, English only).
 - **Voice-over**: VieNeu-TTS (offline, 23 Vietnamese voices, voice cloning, default) or Edge-TTS (online, 2 voices). Clips are fitted to the subtitle timing automatically.
-- **Video**: burned-in Vietnamese subtitles (NVENC when available), soft-subtitle MP4, optional cut (start/end time), horizontal flip, and a blur band to hide the source video's own subtitles.
+- **Video**: burned-in Vietnamese subtitles (NVENC when available), soft-subtitle MP4, optional cut (start/end time), horizontal flip, a blur band to hide the source video's own subtitles, and a "Cre: <channel>" source credit.
 - **Subtitles only**: untick the voice-over option to get burned Vietnamese subtitles over the original audio.
 - **Batch queue**: many files or a whole YouTube playlist, processed one by one; pause / resume / cancel; download all results as a zip.
 - **Web UI**: English / Vietnamese interface, dark / light theme.
@@ -108,7 +108,7 @@ Open **http://127.0.0.1:8787**.
 2. Pick the **source**: local files (several at once) or a YouTube link/playlist (press *analyze*, then tick the videos you want).
 3. Optionally set **cut from / to** (`90`, `1:30`, `1:02:03`) to process only part of the video.
 4. Set the **video language** (English / Chinese / Japanese). This matters: with the wrong language Whisper translates into it first and quality drops.
-5. Adjust subtitles (font size, blur the original subtitles at the bottom, flip) and voice-over (original audio level, default 10 %; voice level; engine; voice — press *listen* to preview).
+5. Adjust subtitles (font size, blur the original subtitles at the bottom, flip, show the source name) and voice-over (original audio level, default 10 %; voice level; engine; voice — press *listen* to preview).
 6. Press **add to queue**. Jobs run one at a time; each row shows the current step (`Step 6/7 · Voice-over · 90%`) and `[pause] [resume] [cancel]`.
 7. Download the results from the job row:
 
@@ -211,7 +211,7 @@ Default mix: original audio at 10 %, Vietnamese voice at 200 %; set original aud
 
 - Burn-in uses `h264_nvenc` when the GPU encoder works, otherwise `libx264`. Force CPU with `BURN_ENCODER=libx264`.
 - With voice-over on, the picture is burned while the voice-over is generated, then the audio is copied in.
-- **Flip** mirrors the picture before the subtitles are drawn, so the subtitles stay readable. **Blur** (0–30 % of the height) blurs the bottom band under the new subtitles. Both apply to `vi_burned.mp4` only.
+- **Flip** mirrors the picture before the subtitles are drawn, so the subtitles stay readable. **Blur** (0–30 % of the height) blurs the bottom band under the new subtitles. **Source name** burns "Cre: <name>" in the top-left corner; for YouTube links the name is the channel, filled in when you press *analyze* and editable. All three apply to `vi_burned.mp4` only.
 
 ## API
 
@@ -224,7 +224,7 @@ Default mix: original audio at 10 %, Vietnamese voice at 200 %; set original aud
 - `GET|POST /api/clone-voices`, `DELETE /api/clone-voices/{name}`: saved clone voices
 - `POST /api/preview-voice`: short voice sample
 
-Main `POST /api/jobs` fields: `source_lang` (`en`/`zh`/`ja`), `whisper_model`, `whisper_device`, `translation_provider` (`huggingface`/`google`/`envit5`), `translate_device`, `translate`, `dub`, `tts_provider` (`vieneu`/`edge`), `tts_voice`, `tts_device`, `background_volume` (0–1), `voice_volume`, `subtitle_font_size`, `trim_start`, `trim_end`, `flip`, `cover_bottom` (0–0.4), `clone_ref_audio` / `clone_voice_name`.
+Main `POST /api/jobs` fields: `source_lang` (`en`/`zh`/`ja`), `whisper_model`, `whisper_device`, `translation_provider` (`huggingface`/`google`/`envit5`), `translate_device`, `translate`, `dub`, `tts_provider` (`vieneu`/`edge`), `tts_voice`, `tts_device`, `background_volume` (0–1), `voice_volume`, `subtitle_font_size`, `trim_start`, `trim_end`, `flip`, `cover_bottom` (0–0.4), `show_source`, `source_credit`, `clone_ref_audio` / `clone_voice_name`.
 
 ## FAQ
 

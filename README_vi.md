@@ -25,7 +25,7 @@ video -> (cắt, tuỳ chọn) -> audio -> phụ đề (Whisper) -> dịch sang 
 - **Nhận diện giọng nói**: Faster-Whisper chạy GPU (tự quay về CPU), ngôn ngữ nguồn Anh, Trung hoặc Nhật.
 - **Dịch**: HuggingFace Hy-MT2-1.8B (offline, 4-bit, mặc định), Google Translate (online, miễn phí) hoặc EnViT5 (offline, chỉ từ tiếng Anh).
 - **Lồng tiếng**: VieNeu-TTS (offline, 23 giọng Việt, clone giọng, mặc định) hoặc Edge-TTS (online, 2 giọng). Mỗi câu tự khớp với thời gian phụ đề.
-- **Video**: burn phụ đề Việt (dùng NVENC nếu có), MP4 phụ đề mềm, cắt đoạn (thời điểm bắt đầu/kết thúc), lật ngang, làm mờ dải đáy để che phụ đề có sẵn của video gốc.
+- **Video**: burn phụ đề Việt (dùng NVENC nếu có), MP4 phụ đề mềm, cắt đoạn (thời điểm bắt đầu/kết thúc), lật ngang, làm mờ dải đáy để che phụ đề có sẵn của video gốc, ghi "Cre: <tên kênh>" lên video.
 - **Chỉ phụ đề**: bỏ tick lồng tiếng để có video burn phụ đề Việt, giữ nguyên audio gốc.
 - **Hàng đợi**: nhiều file hoặc cả playlist YouTube, chạy lần lượt; tạm dừng / tiếp tục / huỷ; tải tất cả kết quả thành file zip.
 - **Giao diện web**: tiếng Anh / tiếng Việt, sáng / tối.
@@ -108,7 +108,7 @@ Mở **http://127.0.0.1:8787**.
 2. Chọn **nguồn**: file trên máy (chọn nhiều file cùng lúc) hoặc link/playlist YouTube (bấm *phân tích* rồi tick các video muốn chạy).
 3. Có thể đặt **cắt từ / đến** (`90`, `1:30`, `1:02:03`) để chỉ xử lý một đoạn.
 4. Chọn **ngôn ngữ video** (Anh / Trung / Nhật). Bước này quan trọng: chọn sai thì Whisper sẽ dịch sang ngôn ngữ đó trước và chất lượng giảm.
-5. Chỉnh phụ đề (cỡ chữ, làm mờ phụ đề gốc ở đáy, lật video) và lồng tiếng (âm lượng audio gốc, mặc định 10%; âm lượng giọng Việt; engine; giọng đọc — bấm *nghe* để nghe thử).
+5. Chỉnh phụ đề (cỡ chữ, làm mờ phụ đề gốc ở đáy, lật video, ghi tên nguồn) và lồng tiếng (âm lượng audio gốc, mặc định 10%; âm lượng giọng Việt; engine; giọng đọc — bấm *nghe* để nghe thử).
 6. Bấm **thêm vào hàng đợi**. Job chạy lần lượt; mỗi dòng hiện bước đang chạy (`Bước 6/7 · Lồng tiếng · 90%`) cùng `[dừng] [tiếp] [huỷ]`.
 7. Tải kết quả ngay trên dòng của job:
 
@@ -211,7 +211,7 @@ Mức trộn mặc định: audio gốc 10%, giọng Việt 200%; đặt audio g
 
 - Burn phụ đề dùng `h264_nvenc` nếu bộ mã hoá GPU hoạt động, không thì dùng `libx264`. Ép dùng CPU bằng `BURN_ENCODER=libx264`.
 - Khi bật lồng tiếng, hình được burn song song trong lúc tạo giọng đọc, sau đó chỉ việc chép audio vào.
-- **Lật video** lật hình trước khi vẽ phụ đề, nên phụ đề vẫn đọc xuôi. **Làm mờ** (0–30% chiều cao) làm mờ dải đáy nằm dưới phụ đề mới. Cả hai chỉ áp dụng cho `vi_burned.mp4`.
+- **Lật video** lật hình trước khi vẽ phụ đề, nên phụ đề vẫn đọc xuôi. **Làm mờ** (0–30% chiều cao) làm mờ dải đáy nằm dưới phụ đề mới. **Tên nguồn** burn dòng "Cre: <tên>" ở góc trên trái; với link YouTube tên là tên kênh, tự điền khi bấm *phân tích* và sửa được. Cả ba chỉ áp dụng cho `vi_burned.mp4`.
 
 ## API
 
@@ -224,7 +224,7 @@ Mức trộn mặc định: audio gốc 10%, giọng Việt 200%; đặt audio g
 - `GET|POST /api/clone-voices`, `DELETE /api/clone-voices/{name}`: giọng clone đã lưu
 - `POST /api/preview-voice`: đoạn giọng nghe thử
 
-Các trường chính của `POST /api/jobs`: `source_lang` (`en`/`zh`/`ja`), `whisper_model`, `whisper_device`, `translation_provider` (`huggingface`/`google`/`envit5`), `translate_device`, `translate`, `dub`, `tts_provider` (`vieneu`/`edge`), `tts_voice`, `tts_device`, `background_volume` (0–1), `voice_volume`, `subtitle_font_size`, `trim_start`, `trim_end`, `flip`, `cover_bottom` (0–0.4), `clone_ref_audio` / `clone_voice_name`.
+Các trường chính của `POST /api/jobs`: `source_lang` (`en`/`zh`/`ja`), `whisper_model`, `whisper_device`, `translation_provider` (`huggingface`/`google`/`envit5`), `translate_device`, `translate`, `dub`, `tts_provider` (`vieneu`/`edge`), `tts_voice`, `tts_device`, `background_volume` (0–1), `voice_volume`, `subtitle_font_size`, `trim_start`, `trim_end`, `flip`, `cover_bottom` (0–0.4), `show_source`, `source_credit`, `clone_ref_audio` / `clone_voice_name`.
 
 ## Câu hỏi thường gặp
 
