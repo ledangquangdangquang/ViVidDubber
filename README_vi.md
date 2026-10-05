@@ -1,32 +1,49 @@
 <h1 align="center">Vietnamese AI Video Dubber</h1>
 
-<p align="center">Lồng tiếng video tiếng Việt hoàn toàn local, hoàn toàn miễn phí — nhận diện Whisper, dịch AI, thuyết minh Edge-TTS / VieNeu-TTS. Không API key, không cloud, 0đ.</p>
+<p align="center">Lồng tiếng video sang tiếng Việt, chạy hoàn toàn trên máy, hoàn toàn miễn phí — nhận diện Whisper, dịch AI, thuyết minh VieNeu-TTS / Edge-TTS. Không API key, không cloud, 0đ.</p>
 
 <p align="center">
 <a href="README.md">English</a> | Tiếng Việt
 </p>
 
-https://github.com/user-attachments/assets/81dc4e20-f8ca-4456-8f00-f3903fb61a25
+![Giao diện ViVidDubber: hàng đợi job có tiến độ và file tải về, khung preview video](docs/screenshots/queue-dark.png)
 
+<p align="center">
+<img src="docs/screenshots/add-video-light.png" alt="Bảng thêm video (giao diện sáng)" width="68%">
+&nbsp;
+<img src="docs/screenshots/mobile-vi.png" alt="Hàng đợi trên điện thoại, giao diện tiếng Việt" width="24%">
+</p>
 
-Công cụ tự động dịch phụ đề và lồng tiếng thuyết minh tiếng Việt cho video nước ngoài (chủ yếu tiếng Anh).
+Biến video tiếng nước ngoài (Anh, Trung, Nhật) thành video có phụ đề tiếng Việt và giọng thuyết minh tiếng Việt. Mọi thứ chạy trên máy của bạn; dùng các engine offline thì không có dữ liệu nào rời khỏi máy.
 
 ```text
-video -> audio -> phụ đề gốc (Whisper) -> dịch sang Việt -> lồng tiếng (Edge-TTS / VieNeu-TTS) -> MP4 kèm phụ đề Việt
+video -> (cắt, tuỳ chọn) -> audio -> phụ đề (Whisper) -> dịch sang Việt -> lồng tiếng (VieNeu-TTS / Edge-TTS) -> MP4 có phụ đề Việt burn sẵn
 ```
 
-### Hiệu năng
+## Tính năng
 
-Đo trên máy cấu hình bên dưới (lồng tiếng VieNeu-TTS), full pipeline: nhận diện giọng nói, dịch, lồng tiếng, mux MP4.
+- **Nhận diện giọng nói**: Faster-Whisper chạy GPU (tự quay về CPU), ngôn ngữ nguồn Anh, Trung hoặc Nhật.
+- **Dịch**: HuggingFace Hy-MT2-1.8B (offline, 4-bit, mặc định), Google Translate (online, miễn phí) hoặc EnViT5 (offline, chỉ từ tiếng Anh).
+- **Lồng tiếng**: VieNeu-TTS (offline, 23 giọng Việt, clone giọng, mặc định) hoặc Edge-TTS (online, 2 giọng). Mỗi câu tự khớp với thời gian phụ đề.
+- **Video**: burn phụ đề Việt (dùng NVENC nếu có), MP4 phụ đề mềm, cắt đoạn (thời điểm bắt đầu/kết thúc), lật ngang, làm mờ dải đáy để che phụ đề có sẵn của video gốc.
+- **Chỉ phụ đề**: bỏ tick lồng tiếng để có video burn phụ đề Việt, giữ nguyên audio gốc.
+- **Hàng đợi**: nhiều file hoặc cả playlist YouTube, chạy lần lượt; tạm dừng / tiếp tục / huỷ; tải tất cả kết quả thành file zip.
+- **Giao diện web**: tiếng Anh / tiếng Việt, sáng / tối.
+- **Không dùng API trả phí.**
 
-| Video | Thời gian xử lý | Tỉ lệ | So với thời lượng gốc |
-|---|---|---|---|
-| 2 phút 45 giây | 2 phút 19 giây | 0.84× | nhanh hơn ~16% |
-| 1 phút 00 giây | 1 phút 12 giây | 1.20× | chậm hơn ~20% |
-| 3 phút 18 giây | 4 phút 16 giây | 1.29× | chậm hơn ~29% |
-| 41 phút 10 giây | 61 phút 12 giây | 1.49× | chậm hơn ~49% |
+## Hiệu năng
 
-Tỉ lệ tăng dần theo độ dài video trên GPU này — card 4GB VRAM bắt đầu đuối khi xử lý video dài. Video ngắn thậm chí nhanh hơn thời lượng gốc.
+Số liệu thật từ `jobs/stats.json` (thời gian cả job: nhận diện, dịch, lồng tiếng, burn phụ đề), cấu hình mặc định: Whisper chạy GPU, Hy-MT2 chạy GPU, VieNeu-TTS chạy GPU.
+
+| Độ dài video | Thời gian xử lý | Tỉ lệ |
+|---|---|---|
+| 5 phút 59 giây | 1 phút 15 giây | 0.21× |
+| 24 phút 20 giây | 3 phút 10 giây | 0.13× |
+| 30 phút 10 giây | 5 phút 32 giây | 0.18× |
+| 33 phút 36 giây | 6 phút 15 giây | 0.19× |
+| 36 phút 27 giây | 6 phút 52 giây | 0.19× |
+
+Video 30 phút mất khoảng 5–7 phút. Job đầu tiên sau khi khởi động server chậm hơn một chút vì phải nạp model (~11 giây cho model dịch, ~13 giây cho VieNeu).
 
 **Cấu hình máy test:**
 
@@ -35,33 +52,20 @@ Tỉ lệ tăng dần theo độ dài video trên GPU này — card 4GB VRAM b�
 | GPU | NVIDIA GeForce RTX 3050 Laptop GPU (4 GB VRAM) |
 | CPU | Intel Core i5-11400H (12 luồng) |
 | RAM | 16 GB |
-| CUDA / driver | CUDA 12.6, driver 610.43.02 |
+| CUDA / driver | CUDA 12.6, driver 615.71.09 |
 | PyTorch | 2.14.0+cu126 |
-| Whisper device | `cuda` |
-| Translation device | `cuda` |
-| TTS engine | VieNeu-TTS (offline) |
 
-Số liệu thô (và các lần chạy sau) được tự động ghi vào `jobs/stats.json` — một mảng JSON, mỗi phần tử là 1 job dub xong, gồm thời lượng video, thời gian xử lý và cấu hình GPU (đọc lại qua `GET /api/stats`).
-
-Chi phí: **0đ** — không cần API trả phí hay dịch vụ cloud.
-
-## Tính năng
-
-- **Speech-to-Text**: Nhận diện giọng nói bằng Faster-Whisper (chạy offline, không tốn phí).
-- **Dịch thuật**: 3 lựa chọn — Google Translate (miễn phí), HuggingFace Hy-MT2-1.8B (trực tiếp, 4-bit giảm VRAM), hoặc EnViT5 offline (Transformers).
-- **Thuyết minh AI (TTS)**: Edge-TTS (online, Microsoft Neural) hoặc VieNeu-TTS (offline, 23 giọng Việt).
-- **Xử lý Video**: Tự động khớp timeline âm thanh (atempo), burn phụ đề hoặc mux soft sub bằng FFmpeg.
-- **Không phụ thuộc API trả phí hay Supertonic ONNX cồng kềnh.**
+Mỗi job lồng tiếng xong sẽ thêm một dòng vào `jobs/stats.json` (độ dài video, thời gian xử lý, GPU, thiết bị, provider); đọc lại qua `GET /api/stats`.
 
 ## Yêu cầu hệ thống
 
 | Thành phần | Bắt buộc | Ghi chú |
 |---|---|---|
-| Python | ✔ | ≥ 3.10 |
+| Python | ✔ | ≥ 3.10, < 3.14 |
 | [uv](https://docs.astral.sh/uv/) | ✔ | Quản lý package + môi trường ảo |
 | [ffmpeg](https://ffmpeg.org/) | ✔ | Xử lý video/audio |
-| GPU NVIDIA (CUDA) | ✖ | Khuyến khích — tăng tốc Whisper & EnViT5; không có thì chạy CPU (chậm hơn) |
-| Internet | Chỉ giai đoạn setup | Cần khi cài đặt và tải model lần đầu; Google Translate cần mạng mỗi lần dùng |
+| GPU NVIDIA (CUDA) | ✖ | Rất nên có (4 GB là đủ); không có vẫn chạy được trên CPU nhưng chậm hơn nhiều |
+| Internet | Chỉ lúc cài đặt | Cài đặt và tải model lần đầu; Google Translate, Edge-TTS và link YouTube thì cần mạng mỗi lần dùng |
 
 Cài đặt nền tảng:
 
@@ -83,149 +87,148 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ```bash
 git clone https://github.com/ledangquangdangquang/ViVidDubber
 cd ViVidDubber
-uv sync --frozen               # cài đặt toàn bộ dependencies (bao gồm VieNeu-TTS)
+uv sync --frozen               # cài toàn bộ dependencies (gồm VieNeu-TTS)
 uv run python app.py           # khởi động server
 ```
 
-> Lưu ý: `uv sync --frozen` sử dụng lock file đã đóng gói sẵn, tránh lỗi phân giải `veneu` trên một số máy.
+> `uv sync --frozen` dùng lock file có sẵn, tránh lỗi phân giải `vieneu` trên một số máy.
 
-Mở trình duyệt: **http://127.0.0.1:8787**
+Mở **http://127.0.0.1:8787**.
 
-Tải video lên, chọn tùy chọn (provider dịch, lồng tiếng, burn phụ đề) rồi bấm chạy. Kết quả nằm trong thư mục `jobs/<job-id>/`.
+## Dùng giao diện web
 
-## Model tải về sẽ nằm ở đâu?
+1. Bấm **+ thêm video** (hoặc phím `N`). Một bảng trượt ra từ bên phải chứa mọi tuỳ chọn.
+2. Chọn **nguồn**: file trên máy (chọn nhiều file cùng lúc) hoặc link/playlist YouTube (bấm *phân tích* rồi tick các video muốn chạy).
+3. Có thể đặt **cắt từ / đến** (`90`, `1:30`, `1:02:03`) để chỉ xử lý một đoạn.
+4. Chọn **ngôn ngữ video** (Anh / Trung / Nhật). Bước này quan trọng: chọn sai thì Whisper sẽ dịch sang ngôn ngữ đó trước và chất lượng giảm.
+5. Chỉnh phụ đề (cỡ chữ, làm mờ phụ đề gốc ở đáy, lật video) và lồng tiếng (âm lượng audio gốc, mặc định 10%; âm lượng giọng Việt; engine; giọng đọc — bấm *nghe* để nghe thử).
+6. Bấm **thêm vào hàng đợi**. Job chạy lần lượt; mỗi dòng hiện bước đang chạy (`Bước 6/7 · Lồng tiếng · 90%`) cùng `[dừng] [tiếp] [huỷ]`.
+7. Tải kết quả ngay trên dòng của job:
 
-Whisper, HuggingFace Hy-MT2-1.8B, EnViT5 và VieNeu-TTS đều tự động tải về qua Hugging Face Hub khi dùng lần đầu, vào cache dùng chung:
+| File | Nội dung |
+|---|---|
+| `vi_burned.mp4` | Giọng Việt + phụ đề Việt burn sẵn (kết quả chính) |
+| `vi_dub.mp4` | Giọng Việt + phụ đề mềm |
+| `vi_soft.mp4` | Audio gốc + phụ đề Việt mềm |
+| `vi.srt` / `original.srt` | Phụ đề tiếng Việt / phụ đề gốc |
+| `audio.wav`, `input` | Audio đã tách, video nguồn |
+
+File nằm trong `jobs/<job-id>/`. Nút `EN | VI` và nút mặt trời/mặt trăng trên thanh trên cùng đổi ngôn ngữ giao diện và theme (trình duyệt tự nhớ lựa chọn).
+
+## Model tải về nằm ở đâu?
+
+Whisper, Hy-MT2-1.8B, EnViT5 và VieNeu-TTS tự tải qua Hugging Face Hub khi dùng lần đầu, vào cache dùng chung:
 
 - Linux/macOS: `~/.cache/huggingface/hub/`
 - Windows: `%USERPROFILE%\.cache\huggingface\hub\`
 
-Mỗi model có 1 thư mục riêng dạng `models--<org>--<tên>/`, ví dụ `models--Systran--faster-whisper-small`, `models--VietAI--envit5-translation`, `models--tencent--Hy-MT2-1.8B`, `models--pnnbao-ump--VieNeu-TTS-v3-Turbo`. Chưa chọn engine/provider đó trên UI thì chưa tải gì cả. Muốn đổi vị trí lưu (cho tất cả model cùng lúc), set biến môi trường `HF_HOME` trước khi chạy `uv run python app.py`.
+Mỗi model có một thư mục `models--<org>--<tên>/`, ví dụ `models--Systran--faster-whisper-medium`, `models--tencent--Hy-MT2-1.8B`, `models--VietAI--envit5-translation`, `models--pnnbao-ump--VieNeu-TTS-v3-Turbo`. Chưa chạy job với engine nào thì chưa tải engine đó. Muốn đổi chỗ lưu, đặt biến `HF_HOME` trước khi chạy `uv run python app.py`.
 
-## Model dịch thuật — chọn cái nào?
+## Ngôn ngữ nguồn
 
-Chọn "Translation provider" trong giao diện web trước khi tạo job:
+| Ngôn ngữ | Whisper | Dịch |
+|---|---|---|
+| Tiếng Anh (mặc định) | ✔ | Hy-MT2, Google, EnViT5 |
+| Tiếng Trung | ✔ | Hy-MT2, Google |
+| Tiếng Nhật | ✔ | Hy-MT2, Google |
 
-| | Google Translate | HuggingFace Hy-MT2-1.8B | EnViT5 |
+Với tiếng Trung và tiếng Nhật, Whisper nhận thêm một câu gợi ý dấu câu cho mỗi đoạn 30 giây (thiếu nó Whisper bỏ hết dấu câu và viết chữ phồn thể), và câu được cắt tại `。？！` với giới hạn độ dài ngắn hơn. EnViT5 chỉ dịch từ tiếng Anh nên giao diện khoá nó với các ngôn ngữ khác.
+
+## Model dịch — chọn cái nào?
+
+| | Hy-MT2-1.8B (mặc định) | Google Translate | EnViT5 |
 |---|---|---|---|
-| **Cần API key** | Không | Không | Không |
-| **Cần internet khi chạy** | Có | Không | Không |
-| **Cài đặt** | Không cần | Tự động (tải model lần đầu) | Tự động (tải model lần đầu) |
-| **Dung lượng tải** | 0 | ~3.5 GB | ~2.1 GB |
-| **Chất lượng dịch** | Tốt | Tốt nhất (1.8B LLM) | Khá (T5 base) |
-| **Tốc độ** | Nhanh (online) | Chậm (LLM lớn) | Nhanh (T5, GPU) |
-| **Phù hợp** | Máy luôn online | Máy offline, chất lượng cao | Máy offline, cần tốc độ |
+| **API key** | Không | Không | Không |
+| **Cần internet khi chạy** | Không | Có | Không |
+| **Dung lượng tải** | ~3.5 GB | 0 | ~2.1 GB |
+| **VRAM** | ~1.2 GB (4-bit) | — | GPU không bắt buộc |
+| **Chất lượng** | Tốt nhất | Tốt | Khá |
+| **Ngôn ngữ nguồn** | Anh, Trung, Nhật | Anh, Trung, Nhật | Chỉ tiếng Anh |
 
-### 1. Google Translate (mặc định)
+Model dịch offline được giữ trong bộ nhớ giữa các job, nên chỉ job đầu tiên mất thời gian nạp.
 
-Không cần cài đặt gì — chỉ cần internet. Đây là lựa chọn nhanh nhất để bắt đầu.
+### Hy-MT2-1.8B
 
-### 2. HuggingFace Hy-MT2-1.8B — trực tiếp
-
-Chạy model dịch Anh-Việt `tencent/Hy-MT2-1.8B` trực tiếp bằng Transformers. Mặc định load **4-bit quant** (bitsandbytes), giảm VRAM từ ~3.4 GB xuống ~1.2 GB mà chất lượng gần như không đổi. Tải model tự động (~3.5 GB) vào lần dùng đầu: chọn "HuggingFace Hy-MT2-1.8B" trong giao diện. Trước kia để chạy model này cần cài thêm server Ollama; giờ không cần — bỏ Ollama, chỉ dùng HuggingFace trực tiếp.
-
-```bash
-# Chỉ cần chọn "HuggingFace Hy-MT2-1.8B" trong giao diện, lần đầu sẽ tải model
-```
-
-Biến môi trường (tùy chọn):
+Chạy `tencent/Hy-MT2-1.8B` trực tiếp bằng Transformers, mặc định **lượng tử hoá 4-bit** (bitsandbytes): ~1.2 GB VRAM thay vì ~3.4 GB.
 
 | Biến | Mặc định | Mô tả |
 |---|---|---|
-| `HF_TRANSLATE_REPO` | `tencent/Hy-MT2-1.8B` | Model trên HuggingFace |
+| `HF_TRANSLATE_REPO` | `tencent/Hy-MT2-1.8B` | Model trên HuggingFace (vd. `tencent/Hy-MT2-7B`: chậm hơn, dịch tốt hơn) |
 | `HF_TRANSLATE_BATCH_SIZE` | `20` | Số dòng dịch mỗi lần gọi |
-| `HF_TRANSLATE_DEVICE` | `auto` | `cpu` hoặc `cuda` (tự dùng GPU nếu có) |
-| `HF_TRANSLATE_QUANT` | `4bit` | `4bit` (giảm VRAM) hoặc `none` (float16) |
+| `HF_TRANSLATE_DEVICE` | tự động | `cpu` hoặc `cuda`; với job từ giao diện, ô "dịch (offline)" được ưu tiên |
+| `HF_TRANSLATE_QUANT` | `4bit` | `4bit` hoặc `none` (FP16) |
 
-> Lưu ý: mặc định 4-bit nên chỉ cần ~1.2 GB VRAM, vừa GPU 4 GB như RTX 3050. Chọn "Chạy dịch trên: GPU" trong UI để dùng CUDA.
+### Google Translate
 
-### 3. EnViT5 — offline Transformers
+Endpoint miễn phí, không cần key. Gửi theo từng cụm 20 dòng, có thử lại; dòng vẫn lỗi sẽ giữ câu gốc và hiện thành cảnh báo trên job.
 
-Chạy hoàn toàn offline bằng model `VietAI/envit5-translation`. Tải model tự động (~2.1 GB) vào lần dùng đầu — chạy GPU nếu có CUDA, ngược lại fallback CPU. Không cần cài đặt gì thêm:
+### EnViT5
 
-```bash
-# Chỉ cần chọn "EnViT5 (offline GPU)" trong giao diện, lần đầu sẽ tải model
-```
-
-Biến môi trường (tùy chọn):
+Model offline `VietAI/envit5-translation`, chỉ dịch Anh → Việt.
 
 | Biến | Mặc định | Mô tả |
 |---|---|---|
 | `ENVIT5_MODEL` | `VietAI/envit5-translation` | Tên model trên HuggingFace |
 | `ENVIT5_BATCH_SIZE` | `20` | Số dòng dịch mỗi lần gọi |
 
-> Lưu ý GPU: nếu `uv run python app.py` báo lỗi triton không biên dịch được CUDA, đặt `CC=/usr/bin/gcc` trước khi chạy. Code đã tự đặt fallback này khi dùng EnViT5.
+> Nếu gặp lỗi triton không biên dịch được CUDA, đặt `CC=/usr/bin/gcc` trước khi chạy (code cũng tự đặt fallback này).
 
-## Cấu hình Whisper (nhận diện giọng nói)
+## Whisper (nhận diện giọng nói)
 
-Mặc định chạy CPU với int8 (không cần GPU). Với GPU, đặt biến môi trường:
+Giao diện gửi model (mặc định `medium`) và thiết bị (mặc định `GPU`, kiểu tính `int8_float16`, ~1.2 GB VRAM). Khi GPU hết bộ nhớ, server gỡ model dịch ra rồi thử lại trên GPU, nếu vẫn lỗi thì chuyển sang CPU `int8`.
 
-```bash
-WHISPER_DEVICE=cuda WHISPER_COMPUTE_TYPE=float16 uv run python app.py
-```
+Biến môi trường là giá trị mặc định cho các lệnh gọi API không gửi những trường này:
 
 | Biến | Mặc định | Mô tả |
 |---|---|---|
 | `WHISPER_DEVICE` | `cpu` | `cpu` hoặc `cuda` |
-| `WHISPER_COMPUTE_TYPE` | `int8` | `int8`/`float16`/`float32` |
-| `WHISPER_BEAM_SIZE` | `1` | Beam search — cao hơn = chính xác hơn, chậm hơn |
+| `WHISPER_COMPUTE_TYPE` | `int8` | `int8`, `int8_float16`, `float16`, `float32` (các kiểu half-precision chỉ chạy GPU; trên CPU tự đổi thành `int8`) |
+| `WHISPER_BEAM_SIZE` | `1` | Cao hơn = chính xác hơn, chậm hơn |
+| `SUBTITLE_MAX_CHARS` | `80` | Số ký tự tối đa mỗi phụ đề trên màn hình; dịch và lồng tiếng vẫn dùng nguyên câu |
 
-Model Whisper mặc định là `small` (chọn trong giao diện). Lần đầu chạy sẽ tải từ HuggingFace.
+## Lồng tiếng (TTS)
 
-## Cấu hình TTS (lồng tiếng)
-
-Chọn "Engine lồng tiếng" trong giao diện web trước khi tạo job:
-
-| | Edge-TTS | VieNeu-TTS |
+| | VieNeu-TTS (mặc định) | Edge-TTS |
 |---|---|---|
-| **Trạng thái** | Online (Microsoft) | **Offline** |
-| **Voices** | 2 (Hoài My, Nam Minh) | **23** (3 miền Bắc/Trung/Nam) |
-| **Audio** | 44.1 kHz | **48 kHz** |
-| **Voice cloning** | ❌ | ✅ (3-8s clip) |
-| **Emotion cues** | ❌ | ✅ `[cười]` `[thở dài]` `[hắng giọng]` |
-| **Cài đặt** | Không cần | Tự động qua `uv sync` |
-| **Model size** | 0 | ~900 MB (tải lần đầu) |
-| **Phù hợp** | Máy luôn online | Máy offline, nhiều giọng, clone giọng |
+| **Chạy** | **Offline** (GPU hoặc CPU) | Online (Microsoft) |
+| **Giọng** | **23** (Bắc / Trung / Nam) | 2 (Hoài My, Nam Minh) |
+| **Audio** | **48 kHz** | 44.1 kHz |
+| **Clone giọng** | ✅ mẫu 3–8 giây, lưu lại để dùng tiếp | ❌ |
+| **Dung lượng model** | ~900 MB (tải lần đầu) | 0 |
 
-### 1. Edge-TTS (mặc định)
+Trên GPU, VieNeu tổng hợp tất cả câu trong một lần chạy theo lô; trên CPU dùng backend ONNX. Câu đọc dài hơn khoảng thời gian của phụ đề sẽ được đọc lại nhanh hơn (Edge-TTS) hoặc kéo giãn thời gian.
 
-Dùng Edge-TTS miễn phí, cần internet. Giọng mặc định: `vi-VN-HoaiMyNeural` (nữ) — có thể đổi trong giao diện; giọng `vi-VN-NamMinhNeural` (nam).
+Mức trộn mặc định: audio gốc 10%, giọng Việt 200%; đặt audio gốc 0% để thay hẳn audio gốc.
 
-### 2. VieNeu-TTS (offline)
+## Video kết quả
 
-Chạy hoàn toàn offline bằng VieNeu-TTS v3 Turbo (48 kHz, 23 giọng). Tải model tự động (~900 MB) lần đầu tiên.
+- Burn phụ đề dùng `h264_nvenc` nếu bộ mã hoá GPU hoạt động, không thì dùng `libx264`. Ép dùng CPU bằng `BURN_ENCODER=libx264`.
+- Khi bật lồng tiếng, hình được burn song song trong lúc tạo giọng đọc, sau đó chỉ việc chép audio vào.
+- **Lật video** lật hình trước khi vẽ phụ đề, nên phụ đề vẫn đọc xuôi. **Làm mờ** (0–30% chiều cao) làm mờ dải đáy nằm dưới phụ đề mới. Cả hai chỉ áp dụng cho `vi_burned.mp4`.
 
-```bash
-# Chỉ cần chọn "VieNeu-TTS (offline)" trong giao diện, lần đầu sẽ tải model
-```
+## API
 
-Biến môi trường (tùy chọn):
+- `POST /api/jobs`: tạo job (multipart `file` + các tuỳ chọn, hoặc `video_url` cho một video YouTube)
+- `POST /api/resolve`: tách link/playlist YouTube thành URL từng video
+- `GET /api/queue`, `GET /api/jobs/{id}`: trạng thái hàng đợi / job
+- `POST /api/jobs/{id}/pause`, `/resume`, `/cancel`: điều khiển job
+- `GET /api/jobs/{id}/download/{kind}`: tải một kết quả; `GET /api/jobs/download-all`: zip mọi bản lồng tiếng đã xong
+- `GET /api/config`, `GET /api/stats`: cấu hình server, số liệu benchmark
+- `GET|POST /api/clone-voices`, `DELETE /api/clone-voices/{name}`: giọng clone đã lưu
+- `POST /api/preview-voice`: đoạn giọng nghe thử
 
-| Biến | Mặc định | Mô tả |
-|---|---|---|
-| (không cần) | — | `vieneu` package tự tải model từ HuggingFace |
-
-> Lưu ý: model được tải từ HuggingFace lần đầu (~900 MB). Sau đó chạy offline hoàn toàn, không cần internet.
-
-> Lưu ý: dùng giọng clone (`ref_audio`) làm thời gian xử lý tăng lên so với giọng preset — hạn chế dùng với video dài.
-
-## API (dành cho tích hợp)
-
-- `POST /api/jobs` — tạo job (multipart: `file` + form options, hoặc `video_url` một video YouTube)
-- `POST /api/resolve` — mở rộng link YouTube thành danh sách URL từng video (playlist → từng video)
-- `GET /api/queue` — danh sách jobs
-- `GET /api/jobs/{id}` — trạng thái job
-- `DELETE /api/jobs/{id}` — xóa job (job đang chạy → 409)
-- `GET /api/jobs/{id}/download/{kind}` — tải kết quả
-- `GET /api/config` — cấu hình & danh sách provider dịch
+Các trường chính của `POST /api/jobs`: `source_lang` (`en`/`zh`/`ja`), `whisper_model`, `whisper_device`, `translation_provider` (`huggingface`/`google`/`envit5`), `translate_device`, `translate`, `dub`, `tts_provider` (`vieneu`/`edge`), `tts_voice`, `tts_device`, `background_volume` (0–1), `voice_volume`, `subtitle_font_size`, `trim_start`, `trim_end`, `flip`, `cover_bottom` (0–0.4), `clone_ref_audio` / `clone_voice_name`.
 
 ## Câu hỏi thường gặp
 
-**Dịch bị sót dòng (giữ nguyên tiếng Anh)?**
-Mỗi dòng lỗi sẽ xuất hiện "Cảnh báo" trong kết quả job. Nguyên nhân phổ biến: Google rate-limit (mạng chậm). Dòng lỗi sẽ tự dịch lại riêng lẻ; nếu vẫn lỗi thì giữ bản gốc tiếng Anh thay vì dịch sai.
+**Có dòng chưa được dịch?**
+Các dòng đó hiện thành cảnh báo trên job. Thường do Google giới hạn tốc độ; dòng lỗi được dịch lại từng dòng, nếu vẫn lỗi thì giữ câu gốc thay vì dịch sai.
 
-**Muốn dùng model dịch hay hơn?**
-Đổi `HF_TRANSLATE_REPO` sang bản model Hy-MT2 lớn hơn (ví dụ `tencent/Hy-MT2-7B`) — chậm hơn nhưng chất lượng tốt hơn.
+**Bản dịch kém, đọc như bị dịch hai lần?**
+Kiểm tra ô ngôn ngữ video. Video tiếng Nhật mà chạy với "Tiếng Anh" thì Whisper dịch sang tiếng Anh trước, rồi mới dịch sang tiếng Việt.
+
+**Job báo lỗi "Whisper không nhận ra lời nói nào…"?**
+Video (hoặc đoạn đã cắt) không có lời nói, ví dụ chỉ có nhạc.
 
 **File quá lớn?**
-Giới hạn upload 2 GB mỗi file, tối đa 50 jobs, file kết quả tự xóa sau 6 tiếng.
+Tối đa 2 GB mỗi file, tối đa 50 job; job đã xong tự xoá sau 6 giờ.
