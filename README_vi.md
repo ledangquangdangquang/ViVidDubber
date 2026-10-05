@@ -42,6 +42,13 @@ Số liệu thật từ `jobs/stats.json` (thời gian cả job: nhận diện, 
 | 30 phút 10 giây | 5 phút 32 giây | 0.18× |
 | 33 phút 36 giây | 6 phút 15 giây | 0.19× |
 | 36 phút 27 giây | 6 phút 52 giây | 0.19× |
+| 91 phút 8 giây | 11 phút 30 giây | 0.13× |
+
+<p align="center">
+<img src="docs/screenshots/benchmark.png" alt="Benchmark: thời gian xử lý và tỉ lệ xử lý/video theo độ dài video, 9 job thật" width="60%">
+</p>
+
+Biểu đồ (lấy từ trang "Benchmark Thuyết Minh") vẽ 9 job chạy GPU, video từ 5 phút trở lên, ghi từ 2026-10-02 sau các commit tăng tốc. Mọi chấm đều nằm dưới đường 1×, tức xử lý nhanh hơn thời lượng video.
 
 Video 30 phút mất khoảng 5–7 phút. Job đầu tiên sau khi khởi động server chậm hơn một chút vì phải nạp model (~11 giây cho model dịch, ~13 giây cho VieNeu).
 

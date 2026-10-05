@@ -42,6 +42,13 @@ Real runs from `jobs/stats.json` (end-to-end job time: transcription, translatio
 | 30 min 10 s | 5 min 32 s | 0.18× |
 | 33 min 36 s | 6 min 15 s | 0.19× |
 | 36 min 27 s | 6 min 52 s | 0.19× |
+| 91 min 8 s | 11 min 30 s | 0.13× |
+
+<p align="center">
+<img src="docs/screenshots/benchmark.png" alt="Benchmark: processing time and processing/video ratio against video length, 9 real jobs" width="60%">
+</p>
+
+The chart (from the "Benchmark Thuyết Minh" page, Vietnamese labels) plots the 9 GPU jobs of 5 minutes or longer recorded since 2026-10-02, after the speed-up commits. Every dot is below the 1× line, i.e. faster than the video plays.
 
 A 30-minute video takes about 5–7 minutes. The first job after starting the server is slower (models load: ~11 s translator, ~13 s VieNeu).
 
