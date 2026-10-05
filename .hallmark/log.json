@@ -1,0 +1,30 @@
+[
+  {
+    "date": "2026-10-05",
+    "macrostructure": "Workbench (queue-first + side-sheet form)",
+    "theme": "custom Terminal",
+    "theme_axes": "dark / mono / chromatic-other (phosphor 150°)",
+    "enrichment": "none",
+    "nav": "N8 terminal command",
+    "footer": "vim-style status line",
+    "brief": "from-scratch rebuild: terminal look, queue-first, settings in <dialog>"
+  },
+  {
+    "date": "2026-10-05",
+    "macrostructure": "Workbench (compact)",
+    "theme": "Catppuccin Mocha (locked, tokens.css)",
+    "enrichment": "none",
+    "nav": "N1a",
+    "footer": "none",
+    "brief": "rev 3 via ui-ux-pro-max: Swiss-minimal style, Fira Sans/Code, outline SVG icons, step indicator, 44px touch targets"
+  },
+  {
+    "date": "2026-10-05",
+    "macrostructure": "Workbench (compact)",
+    "theme": "Catppuccin Mocha (locked, tokens.css)",
+    "enrichment": "none",
+    "nav": "N1a",
+    "footer": "none",
+    "brief": "ViVidDubber web.html redesign · compact, minimal, no AI slop"
+  }
+]

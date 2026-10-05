@@ -1,34 +1,30 @@
-/* Hallmark · design tokens · theme: Catppuccin Mocha (custom, brand palette)
- * paper-band: dark · accent-hue: cool (mauve 277°) · display-style: grotesk-sans
- * Palette source: Catppuccin Mocha official hex + ZK semantic assignments.
+/* Hallmark · design tokens · theme: custom "Terminal" (phosphor on near-black)
+ * paper-band: dark · display-style: mono · accent-hue: chromatic-other (phosphor green 150°)
+ * Replaces the Catppuccin Mocha palette (user asked for a from-scratch terminal look, 2026-10-05).
  */
 :root {
   color-scheme: dark;
-  --color-paper: #1e1e2e;      /* base */
-  --color-paper-2: #181825;    /* mantle */
-  --color-paper-3: #313244;    /* surface0 */
-  --color-ink: #cdd6f4;        /* text */
-  --color-ink-2: #bac2de;      /* subtext1 */
-  --color-muted: #a6adc8;      /* subtext0 */
-  --color-rule: #45475a;       /* surface1 */
-  --color-rule-2: #6c7086;     /* overlay0 */
-  --color-accent: #cba6f7;     /* mauve */
-  --color-accent-deep: #977dbb; /* mauve blended 30% into base */
-  --color-accent-ink: #1e1e2e;
-  --color-accent-2: #89b4fa;   /* blue */
-  --color-accent-2-soft: #2e354d;
-  --color-accent-3: #74c7ec;   /* sapphire */
-  --color-accent-3-soft: #2b373d;
-  --color-success: #a6e3a1;    /* green */
-  --color-success-soft: #323c32;
-  --color-error: #f38ba8;      /* red */
-  --color-error-soft: #3e2e33;
-  --color-focus: #b4befe;      /* lavender */
-  --color-video: #11111b;      /* crust */
+  --color-paper: oklch(15% 0.004 150);     /* page */
+  --color-paper-2: oklch(18.5% 0.006 150); /* panels, dialog */
+  --color-paper-3: oklch(24% 0.01 150);    /* hover / selected */
+  --color-ink: oklch(92% 0.025 145);       /* text */
+  --color-ink-2: oklch(80% 0.02 145);      /* secondary text */
+  --color-muted: oklch(64% 0.015 145);     /* labels, meta */
+  --color-rule: oklch(29% 0.012 150);      /* hairlines */
+  --color-rule-2: oklch(40% 0.015 150);    /* control borders */
+  --color-accent: oklch(82% 0.19 150);     /* phosphor green */
+  --color-accent-ink: oklch(15% 0.004 150);
+  --color-accent-soft: oklch(30% 0.07 150);
+  --color-warn: oklch(84% 0.15 85);        /* amber: paused, warnings */
+  --color-error: oklch(72% 0.17 25);       /* red: errors, cancel */
+  --color-info: oklch(80% 0.1 220);        /* cyan: queued */
+  --color-focus: oklch(88% 0.16 150);
+  --color-video: oklch(9% 0 0);
+  --color-backdrop: oklch(5% 0 0 / 0.6);
 
-  --font-display: "Space Grotesk", "IBM Plex Sans", system-ui, sans-serif;
-  --font-body: "IBM Plex Sans", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --font-body: var(--font-mono);
+  --font-display: var(--font-mono);
 
   --space-2xs: 0.25rem;
   --space-xs: 0.5rem;
@@ -37,27 +33,46 @@
   --space-lg: 1.5rem;
   --space-xl: 2rem;
   --space-2xl: 3rem;
-  --space-3xl: 4rem;
 
-  --text-xs: 0.75rem;
-  --text-sm: 0.875rem;
-  --text-base: 1rem;
-  --text-lg: 1.125rem;
-  --text-xl: 1.375rem;
-  --text-2xl: clamp(1.75rem, 4vw, 2.75rem);
+  /* floor is 18px: the user wants nothing smaller; hierarchy comes from weight and colour */
+  --text-xs: 1.125rem;
+  --text-sm: 1.125rem;
+  --text-base: 1.125rem;
+  --text-lg: 1.25rem;
 
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
-  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
-  --dur-fast: 100ms;
-  --dur-short: 180ms;
-  --dur-medium: 300ms;
+  --dur-short: 150ms;
+  --dur-medium: 240ms;
 
   --rule-hair: 1px;
-  --rule-strong: 2px;
-  --radius-input: 0.6rem;
-  --radius-card: 1rem;
-  --radius-pill: 999px;
-  --page-max: 92rem;
-  --page-gutter: clamp(1rem, 3vw, 2.5rem);
+  --radius: 2px;
+  --control-h: 2.75rem;
+  --touch-min: 2.75rem;
+  --control-h-sm: 2.25rem;  /* inline text buttons ([dừng], [esc]) */
+  --bar-h: 3.75rem;
+  --status-h: 2.25rem;
+  --sheet-w: 42rem;
+  --page-gutter: clamp(0.75rem, 2.5vw, 2rem);
+}
+
+/* Light: ink on warm paper, accent darkened so it still reads as text (>= 4.5:1). */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-paper: oklch(97.5% 0.006 110);
+  --color-paper-2: oklch(95% 0.008 110);
+  --color-paper-3: oklch(91% 0.012 130);
+  --color-ink: oklch(22% 0.02 150);
+  --color-ink-2: oklch(34% 0.02 150);
+  --color-muted: oklch(48% 0.015 150);
+  --color-rule: oklch(87% 0.01 130);
+  --color-rule-2: oklch(74% 0.012 140);
+  --color-accent: oklch(47% 0.13 150);
+  --color-accent-ink: oklch(98% 0.01 150);
+  --color-accent-soft: oklch(90% 0.05 150);
+  --color-warn: oklch(52% 0.12 70);
+  --color-error: oklch(50% 0.18 25);
+  --color-info: oklch(47% 0.11 235);
+  --color-focus: oklch(40% 0.13 150);
+  --color-backdrop: oklch(20% 0.01 150 / 0.35);
 }
