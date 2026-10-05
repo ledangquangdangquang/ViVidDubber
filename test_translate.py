@@ -25,7 +25,7 @@ def test_sorted_batches_keep_original_order():
     assert tr.batches == [["hi", "yo"], ["blank", "medium line"], ["a much longer line here"]]
     assert [b.text for b in out] == ["A MUCH LONGER LINE HERE", "HI", "blank", "MEDIUM LINE", "YO"]
     assert [(b.index, b.start, b.end) for b in out] == [(b.index, b.start, b.end) for b in blocks]
-    assert tr.warnings == ["dòng 3 chưa dịch được, giữ bản gốc tiếng Anh"]
+    assert tr.warnings == ["dòng 3 chưa dịch được, giữ câu gốc"]
 
 
 def test_count_mismatch_falls_back_per_line():

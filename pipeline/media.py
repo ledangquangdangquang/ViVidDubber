@@ -168,7 +168,8 @@ def _video_encoder() -> tuple[list[str], dict | None]:
     return _X264_ARGS, None
 
 
-def burn_subtitles(video_path: Path, srt_path: Path, output_path: Path, font_size: int = 22, keep_audio: bool = True) -> Path:
+def burn_subtitles(video_path: Path, srt_path: Path, output_path: Path, font_size: int = 22, keep_audio: bool = True, flip: bool = False,
+                   cover: float = 0.0) -> Path:
     require_tool("ffmpeg")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     font_size = max(8, min(72, font_size))
@@ -180,7 +181,10 @@ def burn_subtitles(video_path: Path, srt_path: Path, output_path: Path, font_siz
         "ffmpeg",
         "-y",
         "-i", str(video_path),
-        "-vf", f"subtitles='{escaped_srt}':force_style='FontSize={font_size},Outline=1,Shadow=0,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'",
+        # hflip first so the subs stay readable; `cover` blurs the bottom band (the source's own hardsubs) under ours.
+        "-vf", ("hflip," if flip else "")
+        + (f"split[v][b];[b]crop=iw:ih*{cover:.2f}:0:ih*{1 - cover:.2f},gblur=sigma=40[bl];[v][bl]overlay=0:H-h," if cover > 0 else "")
+        + f"subtitles='{escaped_srt}':force_style='FontSize={font_size},Outline=1,Shadow=0,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'",
         *codec_args,
         *(["-c:a", "copy"] if keep_audio else ["-an"]),
         str(part),
@@ -190,6 +194,19 @@ def burn_subtitles(video_path: Path, srt_path: Path, output_path: Path, font_siz
         part.replace(output_path)
     finally:
         part.unlink(missing_ok=True)
+    return output_path
+
+
+def trim_video(video_path: Path, output_path: Path, start: str = "", end: str = "") -> Path:
+    """Cut [start, end] out of `video_path` (ffmpeg time syntax, e.g. "90" or "1:30"; empty = from start / to end).
+    Re-encodes so the cut is frame-exact: a stream copy would start at the previous keyframe."""
+    require_tool("ffmpeg")
+    codec_args, env = _video_encoder()
+    run_command([
+        "ffmpeg", "-y",
+        *(["-ss", start] if start else []), *(["-to", end] if end else []),
+        "-i", str(video_path), *codec_args, "-c:a", "aac", "-b:a", "192k", str(output_path),
+    ], timeout=7200, env=env)
     return output_path
 
 

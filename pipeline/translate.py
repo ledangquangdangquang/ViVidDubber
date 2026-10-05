@@ -48,7 +48,7 @@ def _translate_blocks(
                 index=block.index, start=block.start, end=block.end, text=text.strip() if ok else block.text
             )
     for i in sorted(failed):
-        translator.warnings.append(f"dòng {blocks[i].index} chưa dịch được, giữ bản gốc tiếng Anh")
+        translator.warnings.append(f"dòng {blocks[i].index} chưa dịch được, giữ câu gốc")
     return translated
 
 
@@ -129,7 +129,7 @@ class GoogleTranslator:
                     translated.append(block.text)
 
         for idx in failed[:10]:
-            self.warnings.append(f"dòng {idx} chưa dịch được, giữ bản gốc tiếng Anh")
+            self.warnings.append(f"dòng {idx} chưa dịch được, giữ câu gốc")
         if len(failed) > 10:
             self.warnings.append(
                 f"…và {len(failed) - 10} dòng khác chưa dịch được (có thể do mạng hoặc Google rate-limit)"

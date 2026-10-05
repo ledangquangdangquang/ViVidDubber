@@ -23,6 +23,15 @@ def test_long_fragment_before_gap_untouched():
 
 
 
+def test_cjk_cuts_at_fullwidth_marks():
+    from pipeline.transcribe import _CJK_LIMITS
+    segs = [_seg((0.0, 1.0, "它可以杀人"), (1.0, 1.2, "。"), (1.3, 2.0, "你知道吗"), (2.0, 2.1, "？"))]
+    assert [c[2] for c in group_sentences(segs, **_CJK_LIMITS)] == ["它可以杀人。", "你知道吗？"]
+    # No punctuation at all: the CJK cap still cuts long before the 300-char Latin cap.
+    segs = [_seg(*[(i * 0.2, i * 0.2 + 0.2, "字") for i in range(250)])]
+    assert max(len(c[2]) for c in group_sentences(segs, **_CJK_LIMITS)) <= 100
+
+
 def _fake_whisper(fail_on_cuda: int):
     calls = []
 
@@ -57,9 +66,17 @@ def test_cuda_oom_falls_back_to_cpu_when_nothing_to_free():
     assert calls == ["cuda", "cpu"]
 
 
+def test_cpu_drops_gpu_only_compute_type():
+    # The UI's hidden field can still say int8_float16 when the device select says CPU -> ctranslate2 refuses it.
+    assert FasterWhisperTranscriber(device="cpu", compute_type="int8_float16").compute_type == "int8"
+    assert FasterWhisperTranscriber(device="cuda", compute_type="int8_float16").compute_type == "int8_float16"
+
+
 if __name__ == "__main__":
     test_stray_first_word_reanchors_start()
     test_long_fragment_before_gap_untouched()
     test_cuda_oom_frees_vram_and_retries_on_gpu()
     test_cuda_oom_falls_back_to_cpu_when_nothing_to_free()
+    test_cpu_drops_gpu_only_compute_type()
+    test_cjk_cuts_at_fullwidth_marks()
     print("ok")

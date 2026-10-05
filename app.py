@@ -8,6 +8,7 @@ from functools import lru_cache
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -26,10 +27,11 @@ _JOBS_DIR.mkdir(parents=True, exist_ok=True)
 _STATS_FILE = _JOBS_DIR / "stats.json"
 
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
+_TIME_RE = re.compile(r"\d+(:\d{1,2}){0,2}(\.\d+)?")  # trim points: 90, 1:30, 1:02:03.5
 MAX_JOBS = 50
 JOB_TTL_SECONDS = 3600 * 6  # 6 hours
 
-from pipeline.media import burn_subtitles, download_video, extract_audio, mux_soft_subtitles, probe_media, replace_audio, resolve_video_urls
+from pipeline.media import burn_subtitles, download_video, extract_audio, mux_soft_subtitles, probe_media, replace_audio, resolve_video_urls, trim_video
 from pipeline.subtitle import parse_srt, split_for_display, write_srt
 from pipeline.transcribe import FasterWhisperTranscriber
 from pipeline.translate import EnViT5Translator, GoogleTranslator, HuggingFaceTranslator
@@ -387,6 +389,7 @@ async def create_job(
     file: UploadFile = File(None),
     video_url: str = Form(""),
     target_lang: str = Form("vi"),
+    source_lang: str = Form("en"),
     whisper_model: str = Form("medium"),
     whisper_device: str = Form("cuda"),
     whisper_compute_type: str = Form(""),
@@ -399,8 +402,12 @@ async def create_job(
     tts_voice: str = Form("Thanh Bình"),
     tts_provider: str = Form("vieneu"),
     tts_device: str = Form("cuda"),
-    background_volume: float = Form(0.5),
+    background_volume: float = Form(0.1),
     voice_volume: float = Form(2.0),
+    flip: str = Form("false"),
+    cover_bottom: float = Form(0.0),
+    trim_start: str = Form(""),
+    trim_end: str = Form(""),
     clone_ref_audio: UploadFile = File(None),
     clone_voice_name: str = Form(""),
 ):
@@ -408,6 +415,13 @@ async def create_job(
         raise HTTPException(status_code=400, detail="Unsupported subtitle export mode.")
     if translation_provider not in {"google", "envit5", "huggingface"}:
         raise HTTPException(status_code=400, detail="Unsupported translation provider.")
+    if source_lang not in {"en", "zh", "ja"}:
+        raise HTTPException(status_code=400, detail="Unsupported source language.")
+    if source_lang != "en" and translation_provider == "envit5":
+        raise HTTPException(status_code=400, detail="EnViT5 chỉ dịch từ tiếng Anh. Chọn Google hoặc Hy-MT2.")
+    trim_start, trim_end = trim_start.strip(), trim_end.strip()
+    if any(t and not _TIME_RE.fullmatch(t) for t in (trim_start, trim_end)):
+        raise HTTPException(status_code=400, detail="Thời điểm cắt không hợp lệ (vd: 90, 1:30, 1:02:03).")
     if not file and not video_url.strip():
         raise HTTPException(status_code=400, detail="Provide a video file or a YouTube URL.")
 
@@ -459,6 +473,7 @@ async def create_job(
         _current_step_start=time.time(),
         options={
             "target_lang": target_lang,
+            "source_lang": source_lang,
             "whisper_model": whisper_model,
             "whisper_device": whisper_device,
             "whisper_compute_type": whisper_compute_type,
@@ -474,6 +489,10 @@ async def create_job(
             "tts_ref_audio": ref_audio_path,
             "background_volume": str(background_volume),
             "voice_volume": str(voice_volume),
+            "flip": flip,
+            "cover_bottom": str(max(0.0, min(0.4, cover_bottom))),
+            "trim_start": trim_start,
+            "trim_end": trim_end,
             "video_url": video_url,
             "original_stem": source_title,
         },
@@ -672,6 +691,16 @@ def _run_job(job_id: str) -> None:
             elif state in ("pause", "cancel"):
                 return _finish_control(job_id, state)
 
+        if opts.get("trim_start") or opts.get("trim_end"):
+            trimmed = job_dir / "trimmed.mp4"
+            state = _begin_step(job_id, "Cutting video", 12, trimmed)
+            if state is None:
+                trim_video(input_path, job_dir / "trimmed.part.mp4", opts.get("trim_start", ""), opts.get("trim_end", ""))
+                (job_dir / "trimmed.part.mp4").replace(trimmed)
+            elif state in ("pause", "cancel"):
+                return _finish_control(job_id, state)
+            input_path = trimmed  # every later step works on the cut
+
         state = _begin_step(job_id, "Extracting audio", 15, audio_path)
         if state is None:
             extract_audio(input_path, audio_path)
@@ -689,7 +718,7 @@ def _run_job(job_id: str) -> None:
                 compute_type=opts.get("whisper_compute_type") or None,
                 free_vram=_free_translators,
             )
-            original_blocks = transcriber.transcribe_to_srt(audio_path, original_srt)
+            original_blocks = transcriber.transcribe_to_srt(audio_path, original_srt, source_lang=opts.get("source_lang", "en"))
             if transcriber.device != opts.get("whisper_device"):
                 print(f"[Whisper Warning] job {job_id}: fell back to {transcriber.device} (likely out of VRAM)")
             with JOBS_LOCK:
@@ -699,8 +728,10 @@ def _run_job(job_id: str) -> None:
             return _finish_control(job_id, state)
         else:
             original_blocks = parse_srt(original_srt.read_text(encoding="utf-8"))
+        if not original_blocks:  # every later step needs at least one cue (an empty SRT breaks the ffmpeg mux)
+            raise RuntimeError("Whisper không nhận ra lời nói nào trong video (hoặc đoạn đã cắt). Kiểm tra lại đoạn cắt / ngôn ngữ.")
 
-        dub = opts.get("dub", "false") == "true"
+        dub =opts.get("dub", "false") == "true"
         tts_preload, preload_phases = None, {}
         DUB_PHASES.clear()  # a resumed job that skips the dub step must not log the previous job's phases
         if dub and opts.get("tts_provider", "edge") == "vieneu" and not output_dubbed_video.exists():
@@ -740,7 +771,7 @@ def _run_job(job_id: str) -> None:
                 else:
                     translator = GoogleTranslator()
                 vi_blocks = translator.translate_blocks(
-                    original_blocks, source_lang="en", target_lang=opts["target_lang"]
+                    original_blocks, source_lang=opts.get("source_lang", "en"), target_lang=opts["target_lang"]
                 )
                 if translator.warnings:
                     _set_job(job_id, translation_warnings=list(translator.warnings))
@@ -764,13 +795,15 @@ def _run_job(job_id: str) -> None:
 
         burn = opts.get("export_mode") == "burn"
         font_size = int(opts.get("subtitle_font_size", 22))
+        flip = opts.get("flip") == "true"
+        cover = float(opts.get("cover_bottom", 0))
         burn_thread, burn_errors = None, []
         if burn and dub and not output_burned_video.exists() and not burned_video_only.exists():
             # The burn doesn't need the dub audio: encode the picture now, in parallel with TTS, and
             # stream-copy the dub audio in afterwards. Hides most of the burn time behind the dub step.
             def _burn_video_only() -> None:
                 try:
-                    burn_subtitles(input_path, display_srt, burned_video_only, font_size=font_size, keep_audio=False)
+                    burn_subtitles(input_path, display_srt, burned_video_only, font_size=font_size, flip=flip, cover=cover, keep_audio=False)
                 except Exception as exc:
                     burn_errors.append(exc)
 
@@ -816,11 +849,11 @@ def _run_job(job_id: str) -> None:
                         if burn_errors:
                             raise burn_errors[0]
                     if not burned_video_only.exists():  # resumed job: the background burn never ran
-                        burn_subtitles(input_path, display_srt, burned_video_only, font_size=font_size, keep_audio=False)
+                        burn_subtitles(input_path, display_srt, burned_video_only, font_size=font_size, flip=flip, cover=cover, keep_audio=False)
                     replace_audio(burned_video_only, output_dubbed_video, output_burned_video)
                     burned_video_only.unlink(missing_ok=True)
                 else:
-                    burn_subtitles(input_path, display_srt, output_burned_video, font_size=font_size)
+                    burn_subtitles(input_path, display_srt, output_burned_video, font_size=font_size, flip=flip, cover=cover)
                 _add_file(job_id, "output_burned_video", output_burned_video)
             elif state in ("pause", "cancel"):
                 return _finish_control(job_id, state)

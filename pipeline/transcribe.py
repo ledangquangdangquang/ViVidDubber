@@ -34,7 +34,7 @@ def group_sentences(
         text = "".join(x.word for x in current).strip()
         gap = words[i + 1][0].start - w.end if i + 1 < len(words) else 0.0
         if (
-            w.word.strip().endswith((".", "?", "!"))
+            w.word.strip().endswith((".", "?", "!", "。", "？", "！"))
             or (gap >= pause and len(text) >= soft_chars)
             or (seg_end and len(text) >= seg_chars)
             or len(text) >= max_chars
@@ -48,6 +48,17 @@ def group_sentences(
     return [c for c in chunks if c[2]]
 
 
+# A CJK character carries ~3x the speech of a Latin one, so the char caps shrink to keep cues the same length.
+_CJK_LIMITS = {"soft_chars": 50, "seg_chars": 80, "max_chars": 100, "stray_chars": 7}
+# Without a prompt Whisper drops all punctuation in zh/ja (and writes Traditional Chinese), so every cue
+# would hit the char cap. `hotwords` rides on every 30s window; `initial_prompt` only on the first one
+# once condition_on_previous_text=False.
+_PUNCTUATION_PROMPTS = {
+    "zh": "以下是普通话的句子，使用简体中文。",
+    "ja": "以下は日本語の文章です。句読点を付けてください。",
+}
+
+
 class FasterWhisperTranscriber:
     def __init__(
         self, model_name: str = "small", device: str | None = None, compute_type: str | None = None,
@@ -56,6 +67,8 @@ class FasterWhisperTranscriber:
         self.model_name = model_name
         self.device = device or os.environ.get("WHISPER_DEVICE", "cpu")
         self.compute_type = compute_type or os.environ.get("WHISPER_COMPUTE_TYPE", "int8")
+        if self.device == "cpu" and "float16" in self.compute_type:  # (b)float16 types are GPU-only in ctranslate2
+            self.compute_type = "int8"
         # Called once on a CUDA error before falling back to CPU; returns True if it freed VRAM worth a GPU retry.
         self.free_vram = free_vram
 
@@ -92,9 +105,10 @@ class FasterWhisperTranscriber:
                 # it too (91-min interview: none after 9:47 -> 354 run-on cues of ~207 chars). Independent windows
                 # kept it all the way through (1,279 sentence marks) and ran a bit faster.
                 condition_on_previous_text=False,
+                hotwords=_PUNCTUATION_PROMPTS.get(kwargs.get("language")),
                 **kwargs,
             )
-            chunks = group_sentences(segments)
+            chunks = group_sentences(segments, **(_CJK_LIMITS if kwargs.get("language") in _PUNCTUATION_PROMPTS else {}))
             blocks = [
                 SubtitleBlock(
                     index=i,
