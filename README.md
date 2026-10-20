@@ -6,6 +6,10 @@
 English | <a href="README_vi.md">Tiếng Việt</a>
 </p>
 
+
+https://github.com/user-attachments/assets/68afd856-7f68-4383-b93d-7c73194f4c42
+
+
 ![ViVidDubber web UI: job queue with progress and downloads, video preview](docs/screenshots/queue-dark.png)
 
 <p align="center">
