@@ -5,7 +5,7 @@
 <p align="center">
 <a href="README.md">English</a> | Tiếng Việt
 </p>
-
+https://github.com/user-attachments/assets/68afd856-7f68-4383-b93d-7c73194f4c42
 ![Giao diện ViVidDubber: hàng đợi job có tiến độ và file tải về, khung preview video](docs/screenshots/queue-dark.png)
 
 <p align="center">
