@@ -222,13 +222,13 @@ Default mix: original audio at 10 %, Vietnamese voice at 200 %; set original aud
 - `POST /api/jobs`: create a job (multipart `file` + form options, or `video_url` for one YouTube video)
 - `POST /api/resolve`: expand a YouTube link/playlist into per-video URLs
 - `GET /api/queue`, `GET /api/jobs/{id}`: queue / job status
-- `POST /api/jobs/{id}/pause`, `/resume`, `/cancel`: control a job
+- `POST /api/jobs/{id}/pause`, `/resume`, `/cancel`: control a job (`/cancel` on a finished job deletes it); `POST /api/jobs/clear-done`: delete every finished job
 - `GET /api/jobs/{id}/download/{kind}`: download one result; `GET /api/jobs/download-all`: zip of all finished dubs
 - `GET /api/config`, `GET /api/stats`: server config, benchmark rows
 - `GET|POST /api/clone-voices`, `DELETE /api/clone-voices/{name}`: saved clone voices
 - `POST /api/preview-voice`: short voice sample
 
-Main `POST /api/jobs` fields: `source_lang` (`en`/`zh`/`ja`), `whisper_model`, `whisper_device`, `translation_provider` (`huggingface`/`google`/`envit5`), `translate_device`, `translate`, `dub`, `tts_provider` (`vieneu`/`edge`), `tts_voice`, `tts_device`, `background_volume` (0–1), `voice_volume`, `subtitle_font_size`, `trim_start`, `trim_end`, `flip`, `cover_bottom` (0–0.4), `show_source`, `source_credit`, `clone_ref_audio` / `clone_voice_name`.
+Main `POST /api/jobs` fields: `job_mode` (`full` default; `srt` = skip transcription/translation and dub from an uploaded `srt_file` (Vietnamese SRT drives both subtitles and voice-over); `transform` = flip/blur/credit/cut only), `source_lang` (`en`/`zh`/`ja`), `whisper_model`, `whisper_device`, `translation_provider` (`huggingface`/`google`/`envit5`), `translate_device`, `translate`, `dub`, `tts_provider` (`vieneu`/`edge`), `tts_voice`, `tts_device`, `background_volume` (0–1), `voice_volume`, `subtitle_font_size`, `trim_start`, `trim_end`, `flip`, `cover_bottom` (0–0.4), `show_source`, `source_credit`, `clone_ref_audio` / `clone_voice_name`.
 
 ## FAQ
 
@@ -242,4 +242,7 @@ Check the video language. A Japanese video run as "English" is first translated 
 The video (or the part you cut) has no speech, e.g. only music.
 
 **File too large?**
-2 GB per upload, at most 50 jobs; finished jobs are deleted after 6 hours.
+2 GB per upload, no limit on the number of jobs. Finished jobs are deleted after 6 hours, but not while other jobs are still queued. The queue is saved to `jobs/jobs.json`, so restarting the server picks up where it left off.
+
+**YouTube says "Sign in to confirm you're not a bot"?**
+yt-dlp needs a JavaScript runtime to answer YouTube's challenges; without one it falls back to requests YouTube treats as a bot. The app turns on **Node.js** or **Deno** (install either one) and the solver comes with the `yt-dlp-ejs` dependency, so `uv sync` and a JS runtime on `PATH` are usually enough. If a job still hits the check, the app stops the remaining YouTube jobs instead of failing them one by one; press **↻ retry failed** once it's sorted. Still blocked? Wait a few hours or restart the router for a new IP, or pass your YouTube login: export a `cookies.txt` [the way the yt-dlp wiki describes](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies) and start the server with `YTDLP_COOKIES=/path/to/cookies.txt uv run python app.py`.

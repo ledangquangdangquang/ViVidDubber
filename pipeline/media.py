@@ -4,10 +4,13 @@ from functools import lru_cache
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
 import threading
+import urllib.parse
+import urllib.request
 
 
 class MediaToolError(RuntimeError):
@@ -18,8 +21,29 @@ def _channel(info: dict) -> str:
     return info.get("channel") or info.get("uploader") or ""
 
 
+def _ydl_common_opts() -> dict:
+    """Without a JS runtime yt-dlp can't solve YouTube's challenges and falls back to clients that get
+    "Sign in to confirm you're not a bot"; the solver script ships in yt-dlp-ejs, deno or node runs it.
+    Cookies (YTDLP_COOKIES=cookies.txt, YTDLP_COOKIES_FROM_BROWSER=firefox|chrome|...) are the extra lever."""
+    opts = {"js_runtimes": {"deno": {}, "node": {}}}
+    if browser := os.environ.get("YTDLP_COOKIES_FROM_BROWSER"):
+        opts["cookiesfrombrowser"] = (browser,)
+    if path := os.environ.get("YTDLP_COOKIES"):
+        opts["cookiefile"] = path
+    return opts
+
+
+YT_ID_RE = re.compile(r"(?:[?&]v=|/shorts/|/live/|youtu\.be/)([\w-]{11})")
+
+
 def resolve_video_urls(url: str) -> list[tuple[str, str, str]]:
     """Expand a YouTube link into (url, title, channel) per video (single video → one item)."""
+    if YT_ID_RE.search(url) and "list=" not in url:
+        # oEmbed: title + channel without a full yt-dlp extraction, which hits the bot check when the IP is throttled.
+        query = urllib.parse.urlencode({"url": url, "format": "json"})
+        with urllib.request.urlopen(f"https://www.youtube.com/oembed?{query}", timeout=15) as resp:
+            data = json.load(resp)
+        return [(url, data.get("title") or "Untitled", data.get("author_name") or "")]
     import yt_dlp
 
     ydl_opts = {
@@ -27,14 +51,23 @@ def resolve_video_urls(url: str) -> list[tuple[str, str, str]]:
         "no_warnings": True,
         "extract_flat": True,
         "force_generic_extractor": False,
+        **_ydl_common_opts(),
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
     if info.get("_type") == "playlist":
         items = []
-        for entry in info.get("entries") or []:
-            if entry and entry.get("url"):
-                items.append((entry["url"], entry.get("title") or "Untitled", _channel(entry) or _channel(info)))
+
+        def walk(playlist: dict) -> None:
+            for entry in playlist.get("entries") or []:
+                if not entry:
+                    continue
+                if entry.get("_type") == "playlist":  # a bare channel link nests its tabs (Videos, Live, Shorts)
+                    walk(entry)
+                elif entry.get("url"):
+                    items.append((entry["url"], entry.get("title") or "Untitled", _channel(entry) or _channel(info)))
+
+        walk(info)
         if not items:
             items = [(url, info.get("title") or "Untitled", _channel(info))]
         return items
@@ -56,11 +89,22 @@ def download_video(url: str, job_dir: Path, preferred_height: int = 720) -> tupl
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
+        # A pause before each download: a back-to-back channel batch is what trips the bot check.
+        "sleep_interval": 5,
+        "max_sleep_interval": 15,
+        **_ydl_common_opts(),
     }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        video = (info.get("entries") or [info])[0]
-        title = video.get("title") or "video"
+    for attempt in range(3):
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+            break
+        except yt_dlp.utils.DownloadError as exc:
+            # YouTube now and then answers 403 for a stream URL; a fresh extraction gets a working one.
+            if "403" not in str(exc) or attempt == 2:
+                raise
+    video = (info.get("entries") or [info])[0]
+    title = video.get("title") or "video"
     files = sorted(job_dir.glob("input.*"))
     if not files:
         raise MediaToolError(f"No video downloaded from {url}")
@@ -178,8 +222,10 @@ def _filter_path(path: Path) -> str:
     return "'" + str(path).replace("\\", "/").replace(":", "\\:").replace("'", "\\'") + "'"
 
 
-def burn_subtitles(video_path: Path, srt_path: Path, output_path: Path, font_size: int = 22, keep_audio: bool = True, flip: bool = False,
+def burn_subtitles(video_path: Path, srt_path: Path | None, output_path: Path, font_size: int = 22, keep_audio: bool = True, flip: bool = False,
                    cover: float = 0.0, credit: str = "") -> Path:
+    """Burn subtitles / flip / blur / credit into the picture. `srt_path=None` skips the subtitles
+    filter so a flip-only or credit-only job needs no SRT and no transcription."""
     require_tool("ffmpeg")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     font_size = max(8, min(72, font_size))
@@ -190,16 +236,21 @@ def burn_subtitles(video_path: Path, srt_path: Path, output_path: Path, font_siz
     codec_args, env = _video_encoder()
     # Write to a unique temp name: a resumed job may burn the same output while a background burn is still running.
     part = output_path.with_name(f"{output_path.stem}.{os.getpid()}-{threading.get_ident()}.part{output_path.suffix}")
+    # hflip first so the subs stay readable; `cover` blurs the bottom band (the source's own hardsubs) under ours.
+    vf = ("hflip," if flip else "")
+    if cover > 0:
+        vf += f"split[v][b];[b]crop=iw:ih*{cover:.2f}:0:ih*{1 - cover:.2f},gblur=sigma=40[bl];[v][bl]overlay=0:H-h,"
+    if srt_path is not None:
+        vf += f"subtitles={_filter_path(srt_path)}:force_style='FontSize={font_size},Outline=1,Shadow=0,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000',"
+    if credit:
+        vf += (f"drawtext=textfile={_filter_path(credit_file)}:expansion=none:font=Sans:fontsize=h*0.035:fontcolor=white"
+               ":borderw=2:bordercolor=black:x=w*0.025:y=h*0.035")
+    vf = vf.strip(",")
     cmd = [
         "ffmpeg",
         "-y",
         "-i", str(video_path),
-        # hflip first so the subs stay readable; `cover` blurs the bottom band (the source's own hardsubs) under ours.
-        "-vf", ("hflip," if flip else "")
-        + (f"split[v][b];[b]crop=iw:ih*{cover:.2f}:0:ih*{1 - cover:.2f},gblur=sigma=40[bl];[v][bl]overlay=0:H-h," if cover > 0 else "")
-        + f"subtitles={_filter_path(srt_path)}:force_style='FontSize={font_size},Outline=1,Shadow=0,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000'"
-        + (f",drawtext=textfile={_filter_path(credit_file)}:expansion=none:font=Sans:fontsize=h*0.035:fontcolor=white"
-           ":box=1:boxcolor=black@0.5:boxborderw=10:x=w*0.025:y=h*0.035" if credit else ""),
+        *([ "-vf", vf] if vf else []),
         *codec_args,
         *(["-c:a", "copy"] if keep_audio else ["-an"]),
         str(part),

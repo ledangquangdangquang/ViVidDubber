@@ -26,5 +26,23 @@
     "nav": "N1a",
     "footer": "none",
     "brief": "ViVidDubber web.html redesign · compact, minimal, no AI slop"
+  },
+  {
+    "date": "2026-10-16",
+    "macrostructure": "Workbench (queue-first + side-sheet form)",
+    "theme": "custom Terminal",
+    "enrichment": "none",
+    "nav": "N8 terminal command",
+    "footer": "vim-style status line",
+    "brief": "add job_mode radio (full dub vs flip/credit-only transform); hide recog/dub sections in transform"
+  },
+  {
+    "date": "2026-10-16",
+    "macrostructure": "Workbench (queue-first + side-sheet form)",
+    "theme": "custom Terminal",
+    "enrichment": "none",
+    "nav": "N8 terminal command",
+    "footer": "vim-style status line",
+    "brief": "add third job_mode 'from .srt' (upload Vietnamese SRT -> skip transcribe/translate, dub + burn from it); dynamic job-mode help line, srtGroup section; jobSteps hides audio/asr/translate in srt mode"
   }
 ]

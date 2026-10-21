@@ -25,13 +25,15 @@ _DIR = Path(__file__).parent
 _JOBS_DIR = _DIR / "jobs"
 _JOBS_DIR.mkdir(parents=True, exist_ok=True)
 _STATS_FILE = _JOBS_DIR / "stats.json"
+_JOBS_FILE = _JOBS_DIR / "jobs.json"  # job list + queue, reloaded on startup
+_DONE_VIDEOS_FILE = _JOBS_DIR / "done_videos.txt"  # YouTube ids ever finished; outlives the 6 h job cleanup
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")  # yt-dlp colours its errors
 
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
 _TIME_RE = re.compile(r"\d+(:\d{1,2}){0,2}(\.\d+)?")  # trim points: 90, 1:30, 1:02:03.5
-MAX_JOBS = 50
 JOB_TTL_SECONDS = 3600 * 6  # 6 hours
 
-from pipeline.media import burn_subtitles, download_video, extract_audio, mux_soft_subtitles, probe_media, replace_audio, resolve_video_urls, trim_video
+from pipeline.media import burn_subtitles, download_video, extract_audio, mux_soft_subtitles, probe_media, replace_audio, resolve_video_urls, trim_video, YT_ID_RE
 from pipeline.subtitle import parse_srt, split_for_display, write_srt
 from pipeline.transcribe import FasterWhisperTranscriber
 from pipeline.translate import EnViT5Translator, GoogleTranslator, HuggingFaceTranslator
@@ -57,6 +59,7 @@ class JobState:
     pause_requested: bool = field(default=False, repr=False)
     cancel_requested: bool = field(default=False, repr=False)
     paused_step: str = field(default="", repr=False)
+    current_output: str = field(default="", repr=False)  # output of the step in progress, partial if the server dies
 
 
 JOBS: dict[str, JobState] = {}
@@ -69,6 +72,48 @@ QUEUE_COND = threading.Condition(QUEUE_LOCK)
 
 _WORKER_STARTED = False
 _WORKER_LOCK = threading.Lock()
+_SAVE_LOCK = threading.Lock()
+
+
+def _save_jobs() -> None:
+    """Write every job to jobs.json so a server restart keeps the queue. Call outside JOBS_LOCK."""
+    with _SAVE_LOCK:
+        with JOBS_LOCK:
+            data = [asdict(job) for job in JOBS.values()]
+        tmp = _JOBS_FILE.with_suffix(".tmp")
+        with tmp.open("w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())  # a power cut must not leave an empty jobs.json behind the rename
+        os.replace(tmp, _JOBS_FILE)
+
+
+def _load_jobs() -> None:
+    """Restore jobs.json: an interrupted or queued job goes back in the queue and resumes from its last finished step."""
+    try:
+        saved = [JobState(**d) for d in json.loads(_JOBS_FILE.read_text(encoding="utf-8"))]
+    except (OSError, ValueError, TypeError):
+        return
+    saved.sort(key=lambda j: (j.status != "running", j.created_at))  # the job that was running goes first
+    for job in saved:
+        job_dir = Path(job.files.get("input", "")).parent
+        if not job_dir.is_dir():
+            continue
+        if job.cancel_requested:
+            shutil.rmtree(job_dir, ignore_errors=True)
+            continue
+        if job.status == "running" and job.current_output:
+            Path(job.current_output).unlink(missing_ok=True)  # half-written: a resume would take it as done
+        if job.status in {"queued", "running"}:
+            job.status, job.step = ("paused", "Paused") if job.pause_requested else ("queued", "Waiting")
+            job._current_step_start = 0.0  # the downtime is not a step
+        job.pause_requested = False
+        job.step_timings.pop("Waiting", None)  # logged as a step before the fix above
+        JOBS[job.id] = job
+        if job.status == "done":
+            _mark_video_done(job.options.get("video_url", ""))  # jobs finished before done_videos.txt existed
+        if job.status == "queued":
+            QUEUE_PENDING.append(job.id)
 
 
 def _queue_worker() -> None:
@@ -94,6 +139,7 @@ async def _lifespan(_app):
     global _WORKER_STARTED
     with _WORKER_LOCK:
         if not _WORKER_STARTED:
+            _load_jobs()
             threading.Thread(target=_queue_worker, name="job-queue", daemon=True).start()
             _WORKER_STARTED = True
     yield
@@ -118,6 +164,9 @@ def _queue_position(job_id: str) -> int | None:
 
 
 def _cleanup_jobs() -> None:
+    with QUEUE_LOCK:
+        if QUEUE_PENDING or QUEUE_RUNNING:
+            return  # a long batch must not lose its early outputs before the user downloads them
     now = time.time()
     with JOBS_LOCK:
         expired = [
@@ -136,6 +185,8 @@ def _delete_job(job_id: str) -> bool:
         job_dir = Path(job.files.get("input", "")).parent
     if job_dir and job_dir.is_dir():
         shutil.rmtree(job_dir, ignore_errors=True)
+    if job:
+        _save_jobs()
     return job is not None
 
 
@@ -145,19 +196,21 @@ def _set_job(job_id: str, **updates) -> None:
         for key, value in updates.items():
             setattr(job, key, value)
         job.updated_at = time.time()
+    _save_jobs()
 
 
 def _set_step(job_id: str, step: str, progress: int) -> None:
     now = time.time()
     with JOBS_LOCK:
         job = JOBS[job_id]
-        if job._current_step_start > 0:
+        if job._current_step_start > 0 and job.step != "Waiting":  # time in the queue is not processing time
             elapsed = now - job._current_step_start
             job.step_timings[job.step] = round(elapsed, 1)
         job.step = step
         job.progress = progress
         job._current_step_start = now
         job.updated_at = now
+    _save_jobs()
 
 
 def _add_file(job_id: str, kind: str, path: Path) -> None:
@@ -165,6 +218,7 @@ def _add_file(job_id: str, kind: str, path: Path) -> None:
         job = JOBS[job_id]
         job.files = {**job.files, kind: str(path)}
         job.updated_at = time.time()
+    _save_jobs()
 
 
 def _begin_step(job_id: str, step: str, progress: int, done_path: Path | None = None) -> str | None:
@@ -179,8 +233,12 @@ def _begin_step(job_id: str, step: str, progress: int, done_path: Path | None = 
         if job.pause_requested:
             job.status = "paused"
             job.paused_step = step
-            return "pause"
-    return None
+            result = "pause"
+        else:
+            job.current_output = str(done_path or "")
+            result = None
+    _save_jobs()
+    return result
 
 
 def _job_payload(job: JobState) -> dict:
@@ -189,6 +247,7 @@ def _job_payload(job: JobState) -> dict:
     payload.pop("pause_requested", None)
     payload.pop("cancel_requested", None)
     payload.pop("paused_step", None)
+    payload.pop("current_output", None)
     payload["downloads"] = {
         name: f"/api/jobs/{job.id}/download/{name}"
         for name, path in job.files.items()
@@ -197,7 +256,7 @@ def _job_payload(job: JobState) -> dict:
     if job.status == "queued":
         total_elapsed = 0.0
     elif job.status == "running":
-        total_elapsed = time.time() - job.created_at
+        total_elapsed = sum(job.step_timings.values()) + (time.time() - job._current_step_start if job._current_step_start else 0)
     else:
         total_elapsed = sum(job.step_timings.values())
     payload["total_elapsed"] = round(total_elapsed, 1)
@@ -380,8 +439,35 @@ async def resolve_url(video_url: str = Form("")):
     try:
         items = resolve_video_urls(url)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Failed to resolve URL: {exc}")
-    return {"videos": [{"url": u, "title": t, "channel": c} for u, t, c in items]}
+        raise HTTPException(status_code=400, detail=f"Failed to resolve URL: {_ANSI_RE.sub('', str(exc))}")
+    status = _video_statuses()
+    return {"videos": [{"url": u, "title": t, "channel": c, "status": status.get(_youtube_id(u))} for u, t, c in items]}
+
+
+def _youtube_id(url: str) -> str:
+    m = YT_ID_RE.search(url)
+    return m.group(1) if m else url
+
+
+def _mark_video_done(url: str) -> None:
+    if url:
+        with _DONE_VIDEOS_FILE.open("a", encoding="utf-8") as f:
+            f.write(_youtube_id(url) + "\n")
+
+
+def _video_statuses() -> dict[str, str]:
+    """YouTube id -> 'done' (ever dubbed) or 'queued' (a job for it is still in the list). The UI unticks both."""
+    with JOBS_LOCK:
+        status = {
+            _youtube_id(j.options["video_url"]): "done" if j.status == "done" else "queued"
+            for j in sorted(JOBS.values(), key=lambda j: j.status == "done")  # done wins over a re-queued copy
+            if j.options.get("video_url") and j.status != "error"
+        }
+    try:
+        status.update(dict.fromkeys(_DONE_VIDEOS_FILE.read_text(encoding="utf-8").split(), "done"))
+    except OSError:
+        pass
+    return status
 
 
 @app.post("/api/jobs")
@@ -394,6 +480,8 @@ async def create_job(
     whisper_device: str = Form("cuda"),
     whisper_compute_type: str = Form(""),
     export_mode: str = Form("burn"),
+    job_mode: str = Form("full"),
+    srt_file: UploadFile = File(None),
     subtitle_font_size: int = Form(15),
     translate: str = Form("true"),
     translation_provider: str = Form("huggingface"),
@@ -415,6 +503,8 @@ async def create_job(
 ):
     if export_mode not in {"soft", "burn"}:
         raise HTTPException(status_code=400, detail="Unsupported subtitle export mode.")
+    if job_mode not in {"full", "transform", "srt"}:
+        raise HTTPException(status_code=400, detail="Unsupported job mode.")
     if translation_provider not in {"google", "envit5", "huggingface"}:
         raise HTTPException(status_code=400, detail="Unsupported translation provider.")
     if source_lang not in {"en", "zh", "ja"}:
@@ -458,6 +548,30 @@ async def create_job(
                 out.write(chunk)
         source_title = Path(file.filename or "input").stem
 
+    has_srt = False
+    if job_mode == "transform":
+        dub = "false"
+        translate = "false"
+        export_mode = "burn"
+        if flip != "true" and show_source != "true" and cover_bottom <= 0 and not trim_start and not trim_end:
+            raise HTTPException(status_code=400, detail="Transform không có gì để làm: bật flip, cre, làm mờ hoặc cắt đoạn.")
+    elif job_mode == "srt":
+        translate = "false"
+        if srt_file is None or not srt_file.filename:
+            raise HTTPException(status_code=400, detail="Vui lòng tải lên file phụ đề .srt.")
+        srt_bytes = srt_file.file.read()
+        if not srt_bytes.strip():
+            raise HTTPException(status_code=400, detail="File phụ đề .srt rỗng.")
+        try:
+            parsed_srt = parse_srt(srt_bytes.decode("utf-8-sig", errors="replace"))
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Lỗi đọc file .srt: {exc}")
+        if not parsed_srt:
+            raise HTTPException(status_code=400, detail="Không tìm thấy block phụ đề nào trong file .srt.")
+        vi_srt_path = job_dir / "vi.srt"
+        vi_srt_path.write_text(write_srt(parsed_srt), encoding="utf-8")
+        has_srt = True
+
     ref_audio_path = ""
     if clone_ref_audio is not None and clone_ref_audio.filename:
         ref_audio_path = str(_save_clone_ref(clone_ref_audio, job_dir))
@@ -469,9 +583,12 @@ async def create_job(
         ref_audio_path = saved
         tts_provider = "vieneu"
 
+    init_files = {"input": str(input_path)}
+    if has_srt:
+        init_files["vi_srt"] = str(job_dir / "vi.srt")
     state = JobState(
         id=job_id,
-        files={"input": str(input_path)},
+        files=init_files,
         _current_step_start=time.time(),
         options={
             "target_lang": target_lang,
@@ -480,6 +597,8 @@ async def create_job(
             "whisper_device": whisper_device,
             "whisper_compute_type": whisper_compute_type,
             "export_mode": export_mode,
+            "job_mode": job_mode,
+            "has_srt": "true" if has_srt else "false",
             "subtitle_font_size": str(subtitle_font_size),
             "translate": translate,
             "translation_provider": translation_provider,
@@ -503,6 +622,7 @@ async def create_job(
     )
     with JOBS_LOCK:
         JOBS[job_id] = state
+    _save_jobs()
 
     _enqueue_job(job_id)
     return _job_payload(state)
@@ -584,6 +704,30 @@ def _job_status(job_id: str) -> str | None:
         return job.status if job else None
 
 
+@app.post("/api/jobs/retry-errors")
+def retry_errors():
+    """Re-queue every failed job; it resumes from its last finished step."""
+    with JOBS_LOCK:
+        failed = sorted((j for j in JOBS.values() if j.status == "error"), key=lambda j: j.created_at)
+        for job in failed:
+            job.status, job.step, job.error = "queued", "Waiting", None
+            job.updated_at = time.time()
+    _save_jobs()
+    for job in failed:
+        _enqueue_job(job.id)
+    return {"ok": True, "retried": len(failed)}
+
+
+@app.post("/api/jobs/clear-done")
+def clear_done():
+    """Delete every finished job and its folder; failed jobs stay so they can be retried."""
+    with JOBS_LOCK:
+        done = [jid for jid, j in JOBS.items() if j.status == "done"]
+    for jid in done:
+        _delete_job(jid)
+    return {"ok": True, "deleted": len(done)}
+
+
 @app.post("/api/jobs/{job_id}/pause")
 def pause_job(job_id: str):
     status = _job_status(job_id)
@@ -599,11 +743,14 @@ def pause_job(job_id: str):
         if job.status == "running":
             job.pause_requested = True
             job.updated_at = time.time()
-            return {"ok": True, "status": "running"}
-        job.status = "paused"
-        job.step = "Paused"
-        job.updated_at = time.time()
-    return {"ok": True, "status": "paused"}
+            status = "running"
+        else:
+            job.status = "paused"
+            job.step = "Paused"
+            job.updated_at = time.time()
+            status = "paused"
+    _save_jobs()
+    return {"ok": True, "status": status}
 
 
 @app.post("/api/jobs/{job_id}/resume")
@@ -618,6 +765,7 @@ def resume_job(job_id: str):
             job.step = "Waiting"
             job.updated_at = time.time()
     if job.status == "queued":
+        _save_jobs()
         _enqueue_job(job_id)
     return {"ok": True, "status": job.status}
 
@@ -631,6 +779,7 @@ def cancel_job(job_id: str):
         with JOBS_LOCK:
             JOBS[job_id].cancel_requested = True
             JOBS[job_id].updated_at = time.time()
+        _save_jobs()
         return {"ok": True, "status": "cancelling"}
     with QUEUE_LOCK:
         if job_id in QUEUE_PENDING:
@@ -687,7 +836,7 @@ def _run_job(job_id: str) -> None:
 
         video_url = opts.get("video_url", "")
         if video_url:
-            state = _begin_step(job_id, "Downloading video from YouTube", 10, input_path if input_path.exists() else None)
+            state = _begin_step(job_id, "Downloading video from YouTube", 10, input_path)
             if state is None:
                 input_path, source_title, source_channel = download_video(video_url, job_dir)
                 _add_file(job_id, "input", input_path)
@@ -706,35 +855,59 @@ def _run_job(job_id: str) -> None:
                 return _finish_control(job_id, state)
             input_path = trimmed  # every later step works on the cut
 
-        state = _begin_step(job_id, "Extracting audio", 15, audio_path)
-        if state is None:
-            extract_audio(input_path, audio_path)
-            _add_file(job_id, "audio", audio_path)
-        elif state in ("pause", "cancel"):
-            return _finish_control(job_id, state)
+        if opts.get("job_mode") == "transform":
+            # Flip / credit / blur / trim only: no Whisper, no translation, no TTS, no SRT needed.
+            flip = opts.get("flip") == "true"
+            cover = float(opts.get("cover_bottom", 0))
+            font_size = int(opts.get("subtitle_font_size", 22))
+            source_name = opts.get("source_credit") or opts.get("source_channel", "")
+            credit = f"Cre: {source_name}" if opts.get("show_source") == "true" and source_name else ""
+            state = _begin_step(job_id, "Transforming video", 80, output_burned_video)
+            if state is None:
+                burn_subtitles(input_path, None, output_burned_video, font_size=font_size, flip=flip, cover=cover, credit=credit)
+                _add_file(job_id, "output_burned_video", output_burned_video)
+            elif state in ("pause", "cancel"):
+                return _finish_control(job_id, state)
+            _set_step(job_id, "Done", 100)
+            _set_job(job_id, status="done")
+            _mark_video_done(opts.get("video_url", ""))
+            return
 
-        state = _begin_step(job_id, "Transcribing audio to SRT", 35, original_srt)
-        if state is None:
-            if opts.get("whisper_device") == "cuda":
-                _free_gpu()
-            transcriber = FasterWhisperTranscriber(
-                model_name=opts["whisper_model"],
-                device=opts.get("whisper_device"),
-                compute_type=opts.get("whisper_compute_type") or None,
-                free_vram=_free_translators,
-            )
-            original_blocks = transcriber.transcribe_to_srt(audio_path, original_srt, source_lang=opts.get("source_lang", "en"))
-            if transcriber.device != opts.get("whisper_device"):
-                print(f"[Whisper Warning] job {job_id}: fell back to {transcriber.device} (likely out of VRAM)")
-            with JOBS_LOCK:
-                JOBS[job_id].options["whisper_device_used"] = transcriber.device
-            _add_file(job_id, "original_srt", original_srt)
-        elif state in ("pause", "cancel"):
-            return _finish_control(job_id, state)
+        has_srt = opts.get("job_mode") == "srt" or opts.get("has_srt") == "true"
+        if has_srt:  # the user's own Vietnamese SRT: no Whisper, no translator
+            original_blocks = parse_srt(vi_srt.read_text(encoding="utf-8"))
+            subtitle_for_export = vi_srt
+            _add_file(job_id, "vi_srt", vi_srt)
         else:
-            original_blocks = parse_srt(original_srt.read_text(encoding="utf-8"))
+            state = _begin_step(job_id, "Extracting audio", 15, audio_path)
+            if state is None:
+                extract_audio(input_path, audio_path)
+                _add_file(job_id, "audio", audio_path)
+            elif state in ("pause", "cancel"):
+                return _finish_control(job_id, state)
+
+            state = _begin_step(job_id, "Transcribing audio to SRT", 35, original_srt)
+            if state is None:
+                if opts.get("whisper_device") == "cuda":
+                    _free_gpu()
+                transcriber = FasterWhisperTranscriber(
+                    model_name=opts["whisper_model"],
+                    device=opts.get("whisper_device"),
+                    compute_type=opts.get("whisper_compute_type") or None,
+                    free_vram=_free_translators,
+                )
+                original_blocks = transcriber.transcribe_to_srt(audio_path, original_srt, source_lang=opts.get("source_lang", "en"))
+                if transcriber.device != opts.get("whisper_device"):
+                    print(f"[Whisper Warning] job {job_id}: fell back to {transcriber.device} (likely out of VRAM)")
+                with JOBS_LOCK:
+                    JOBS[job_id].options["whisper_device_used"] = transcriber.device
+                _add_file(job_id, "original_srt", original_srt)
+            elif state in ("pause", "cancel"):
+                return _finish_control(job_id, state)
+            else:
+                original_blocks = parse_srt(original_srt.read_text(encoding="utf-8"))
         if not original_blocks:  # every later step needs at least one cue (an empty SRT breaks the ffmpeg mux)
-            raise RuntimeError("Whisper không nhận ra lời nói nào trong video (hoặc đoạn đã cắt). Kiểm tra lại đoạn cắt / ngôn ngữ.")
+            raise RuntimeError("Whisper không nhận ra lời nói nào trong video (hoặc file SRT rỗng).")
 
         dub =opts.get("dub", "false") == "true"
         tts_preload, preload_phases = None, {}
@@ -764,29 +937,30 @@ def _run_job(job_id: str) -> None:
             tts_preload = threading.Thread(target=_preload_tts, daemon=True)
             tts_preload.start()
 
-        subtitle_for_export = original_srt
-        if opts.get("translate", "true") == "true" and original_blocks:
-            state = _begin_step(job_id, "Translating subtitles to Vietnamese", 65, vi_srt if vi_srt.exists() else None)
-            if state is None:
-                provider = opts.get("translation_provider", "google")
-                if provider == "envit5":
-                    translator = EnViT5Translator(device=opts.get("translate_device", "cpu"))
-                elif provider == "huggingface":
-                    translator = HuggingFaceTranslator(device=opts.get("translate_device", "cpu"))
+        if not has_srt:
+            subtitle_for_export = original_srt
+            if opts.get("translate", "true") == "true" and original_blocks:
+                state = _begin_step(job_id, "Translating subtitles to Vietnamese", 65, vi_srt)
+                if state is None:
+                    provider = opts.get("translation_provider", "google")
+                    if provider == "envit5":
+                        translator = EnViT5Translator(device=opts.get("translate_device", "cpu"))
+                    elif provider == "huggingface":
+                        translator = HuggingFaceTranslator(device=opts.get("translate_device", "cpu"))
+                    else:
+                        translator = GoogleTranslator()
+                    vi_blocks = translator.translate_blocks(
+                        original_blocks, source_lang=opts.get("source_lang", "en"), target_lang=opts["target_lang"]
+                    )
+                    if translator.warnings:
+                        _set_job(job_id, translation_warnings=list(translator.warnings))
+                    vi_srt.write_text(write_srt(vi_blocks), encoding="utf-8")
+                    subtitle_for_export = vi_srt
+                    _add_file(job_id, "vi_srt", vi_srt)
+                elif state in ("pause", "cancel"):
+                    return _finish_control(job_id, state)
                 else:
-                    translator = GoogleTranslator()
-                vi_blocks = translator.translate_blocks(
-                    original_blocks, source_lang=opts.get("source_lang", "en"), target_lang=opts["target_lang"]
-                )
-                if translator.warnings:
-                    _set_job(job_id, translation_warnings=list(translator.warnings))
-                vi_srt.write_text(write_srt(vi_blocks), encoding="utf-8")
-                subtitle_for_export = vi_srt
-                _add_file(job_id, "vi_srt", vi_srt)
-            elif state in ("pause", "cancel"):
-                return _finish_control(job_id, state)
-            else:
-                subtitle_for_export = vi_srt
+                    subtitle_for_export = vi_srt
 
         # Translation/dub work on whole sentences; only the on-screen subtitles get cut short.
         display_srt = job_dir / "display.srt"
@@ -870,8 +1044,26 @@ def _run_job(job_id: str) -> None:
         if dub:
             _log_dub_stats(job_id, input_path, {**preload_phases, **DUB_PHASES})
         _set_job(job_id, status="done")
+        _mark_video_done(opts.get("video_url", ""))
     except Exception as exc:
-        _set_job(job_id, status="error", step="Failed", error=str(exc))
+        error = _ANSI_RE.sub("", str(exc))
+        _set_job(job_id, status="error", step="Failed", error=error)
+        if "not a bot" in error:
+            _hold_youtube_jobs()
+
+
+def _hold_youtube_jobs() -> None:
+    """YouTube blocked this IP: every later download would fail the same way within seconds and burn
+    through the queue. Fail the waiting YouTube jobs now instead; /api/jobs/retry-errors re-queues them."""
+    with JOBS_LOCK:
+        youtube = {jid for jid, j in JOBS.items() if j.options.get("video_url")}
+    with QUEUE_LOCK:
+        held = [jid for jid in QUEUE_PENDING if jid in youtube]
+        QUEUE_PENDING[:] = [jid for jid in QUEUE_PENDING if jid not in youtube]
+    for jid in held:
+        _set_job(jid, status="error", step="Failed", error=(
+            "Chưa chạy: YouTube đòi đăng nhập (chống bot). Đợi vài tiếng hoặc đặt YTDLP_COOKIES "
+            "(README › FAQ), rồi bấm chạy lại job lỗi."))
 
 
 def _free_translators() -> bool:
@@ -970,6 +1162,11 @@ def main():
     import uvicorn
     print(f"Vietnamese Video Dubber: http://{args.host}:{args.port}")
     uvicorn.run(app, host=args.host, port=args.port)
+    # Ctrl+C: the worker thread may be mid-CUDA, and torch's atexit finalizers then hang or abort
+    # ("terminate called without an active exception"). Every job change is already in jobs.json and a
+    # half-done step reruns on the next start, so skip interpreter teardown.
+    print("Stopped. The queue is saved in jobs/jobs.json.", flush=True)
+    os._exit(0)
 
 
 if __name__ == "__main__":

@@ -17,3 +17,6 @@ __editable__*
 .idea/
 .DS_Store
 
+
+# browser cookies for yt-dlp: secrets
+cookies*.txt

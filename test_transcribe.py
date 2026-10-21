@@ -17,9 +17,15 @@ def test_stray_first_word_reanchors_start():
     assert chunks[1][0] == 1407.7
 
 
-def test_long_fragment_before_gap_untouched():
+def test_long_silence_cuts():
+    # Not a stray first word: the lead-in keeps its own start and cue instead of spanning the gap.
     segs = [_seg((0.0, 2.0, " Here is a much longer lead-in"), (6.0, 7.0, " before the end."))]
-    assert group_sentences(segs)[0][0] == 0.0
+    assert group_sentences(segs) == [(0.0, 2.0, "Here is a much longer lead-in"), (6.0, 7.0, "before the end.")]
+    # Sparse-dialogue ja: an unpunctuated line, 90 s of silence, then the next line -> was one 10-102 s cue.
+    from pipeline.transcribe import _CJK_LIMITS
+    segs = [_seg((10.0, 10.5, "ちょっと"), (10.5, 11.0, "待って"), (11.0, 11.5, "ください")),
+            _seg((101.0, 101.5, "もう"), (101.5, 102.0, "いいよ。"))]
+    assert group_sentences(segs, **_CJK_LIMITS) == [(10.0, 11.5, "ちょっと待ってください"), (101.0, 102.0, "もういいよ。")]
 
 
 
@@ -74,7 +80,7 @@ def test_cpu_drops_gpu_only_compute_type():
 
 if __name__ == "__main__":
     test_stray_first_word_reanchors_start()
-    test_long_fragment_before_gap_untouched()
+    test_long_silence_cuts()
     test_cuda_oom_frees_vram_and_retries_on_gpu()
     test_cuda_oom_falls_back_to_cpu_when_nothing_to_free()
     test_cpu_drops_gpu_only_compute_type()

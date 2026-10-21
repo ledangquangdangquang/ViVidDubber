@@ -19,6 +19,8 @@ def group_sentences(
 
     Cuts at . ? !; when Whisper skipped punctuation, falls back to a pause >= `pause` s (once the text
     is >= soft_chars), a segment end (once >= seg_chars), and finally a hard max_chars cap.
+    Any silence >= stray_gap also cuts, so a short unpunctuated line in a sparse-dialogue video does not
+    stay on screen through the silence and merge with whatever is said a minute later.
     Whisper sometimes drops a sentence's first word(s) seconds before the rest (over music/B-roll);
     a fragment < stray_chars followed by a gap >= stray_gap re-anchors the cue start after the gap,
     otherwise the sub shows early and the dub finishes long before the cue ends.
@@ -38,6 +40,7 @@ def group_sentences(
             or (gap >= pause and len(text) >= soft_chars)
             or (seg_end and len(text) >= seg_chars)
             or len(text) >= max_chars
+            or (gap >= stray_gap and len(text) >= stray_chars)
         ):
             chunks.append((start, current[-1].end, text))
             current = []
@@ -53,9 +56,13 @@ _CJK_LIMITS = {"soft_chars": 50, "seg_chars": 80, "max_chars": 100, "stray_chars
 # Without a prompt Whisper drops all punctuation in zh/ja (and writes Traditional Chinese), so every cue
 # would hit the char cap. `hotwords` rides on every 30s window; `initial_prompt` only on the first one
 # once condition_on_previous_text=False.
+# ja is sample dialogue, not an instruction: "以下は日本語の文章です。句読点を付けてください。" made Whisper end
+# windows early and echo the prompt (job abfaacf660d1: 3:15-4:13 of clear speech gone, then "日本語の文章は…"
+# as a cue). Sample dialogue, GPU int8_float16 on two 1-2.5 h videos: 1.4 vs 3.0 / 1.2 vs 1.5 min of VAD
+# speech left without a cue, 95%+ cues punctuated, no echo.
 _PUNCTUATION_PROMPTS = {
     "zh": "以下是普通话的句子，使用简体中文。",
-    "ja": "以下は日本語の文章です。句読点を付けてください。",
+    "ja": "うん、そうだね。本当に？ちょっと待って。",
 }
 
 

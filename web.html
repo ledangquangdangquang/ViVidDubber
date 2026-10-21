@@ -139,6 +139,7 @@ a { color: var(--color-accent); }
 .pane-head h2::before { content: "## "; color: var(--color-accent); }
 .queue-summary { margin: 0; }
 .pane-head .btn { margin-inline-start: auto; height: var(--control-h-sm); font-size: var(--text-sm); }
+.pane-head .btn:not([hidden]) ~ .btn { margin-inline-start: 0; }  /* only the first visible button pushes right */
 
 .queue-list { display: grid; border-block-start: var(--rule-hair) dashed var(--color-rule-2); }
 .queue-list:empty { display: none; }
@@ -301,6 +302,7 @@ input[type="file"]::file-selector-button { margin-inline-end: 1ch; padding: 0.25
 .video-list { display: grid; gap: var(--space-2xs); max-height: 12rem; overflow-y: auto; padding: var(--space-xs) 1ch; border: var(--rule-hair) solid var(--color-rule-2); font-size: var(--text-sm); }
 .video-item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 1ch; align-items: start; cursor: pointer; }
 .video-item span { overflow-wrap: anywhere; }
+.video-item .video-tag { color: var(--color-muted); }
 .video-item input { margin: 0.2rem 0 0; accent-color: var(--color-accent); }
 
 /* checkboxes drawn as [x] / [ ] */
@@ -372,6 +374,8 @@ details.more[open] > summary { margin-block-end: var(--space-sm); }
       <h2 id="queueTitle" data-i18n="queue">queue</h2>
       <span>(<span id="queueCount">0</span>)</span>
       <p class="queue-summary" id="queueSummary" aria-live="polite"></p>
+      <button type="button" class="btn" id="retryBtn" hidden></button>
+      <button type="button" class="btn" id="clearDoneBtn" hidden></button>
       <a class="btn" id="downloadAllBtn" href="/api/jobs/download-all" hidden data-i18n="download_all">↓ download all .zip</a>
     </div>
     <div class="queue-list" id="queueList" data-i18n-attr="aria-label:job_list"></div>
@@ -401,6 +405,16 @@ details.more[open] > summary { margin-block-end: var(--space-sm); }
     </header>
 
     <div class="sheet-body">
+      <section class="group">
+        <h3 class="group-title" data-i18n="g_mode">job</h3>
+        <div class="tabs" role="radiogroup" data-i18n-attr="aria-label:g_mode">
+          <label><input type="radio" name="job_mode" value="full" checked><span data-i18n="mode_full">full dub</span></label>
+          <label><input type="radio" name="job_mode" value="srt"><span data-i18n="mode_srt">from .srt</span></label>
+          <label><input type="radio" name="job_mode" value="transform"><span data-i18n="mode_transform">flip / credit only</span></label>
+        </div>
+        <span class="field-help" id="jobModeHelp" data-i18n="full_help">Full pipeline: transcribe speech, translate to Vietnamese, dub voice-over, and burn subtitles.</span>
+      </section>
+
       <section class="group">
         <h3 class="group-title" data-i18n="g_source">source</h3>
         <div class="tabs" role="radiogroup" data-i18n-attr="aria-label:source_aria">
@@ -433,7 +447,16 @@ details.more[open] > summary { margin-block-end: var(--space-sm); }
         </div>
       </section>
 
-      <section class="group">
+      <section class="group" id="srtGroup" hidden>
+        <h3 class="group-title" data-i18n="g_srt">subtitles file</h3>
+        <div class="field" id="srtFileField">
+          <label for="srtFile" data-i18n="srt_label">SRT file (Vietnamese subtitles)</label>
+          <input class="file-input" id="srtFile" name="srt_file" type="file" accept=".srt,application/x-subrip,text/plain">
+          <span class="field-help" data-i18n="srt_help">Used for both the on-screen subtitles and the voice-over. Skips transcription and translation.</span>
+        </div>
+      </section>
+
+      <section class="group" id="recogGroup">
         <h3 class="group-title" data-i18n="g_recog">recognition &amp; translation</h3>
         <div class="row">
           <div class="field">
@@ -466,11 +489,11 @@ details.more[open] > summary { margin-block-end: var(--space-sm); }
         <label class="check"><input id="translateToggle" type="checkbox" checked><span class="box" aria-hidden="true"></span><span data-i18n="translate_vi">translate to Vietnamese</span></label>
       </section>
 
-      <section class="group">
+      <section class="group" id="burnGroup">
         <h3 class="group-title" data-i18n="g_burn">burned subtitles</h3>
         <input type="hidden" name="export_mode" value="burn">
         <input type="hidden" id="targetLang" name="target_lang" value="vi">
-        <div class="field">
+        <div class="field" id="fontSizeField">
           <label for="subtitleFontSize" data-i18n="font_size">font size</label>
           <div class="slider-row">
             <input id="subtitleFontSize" name="subtitle_font_size" type="range" min="12" max="48" value="15" step="1">
@@ -494,7 +517,7 @@ details.more[open] > summary { margin-block-end: var(--space-sm); }
         </div>
       </section>
 
-      <section class="group">
+      <section class="group" id="dubGroup">
         <h3 class="group-title" data-i18n="g_dub">voice-over</h3>
         <label class="check"><input id="dubToggle" type="checkbox" checked><span class="box" aria-hidden="true"></span><span data-i18n="dub_toggle">Vietnamese voice-over, keep original audio low</span></label>
         <div id="volumeControls" class="row">
@@ -598,10 +621,17 @@ const I18N = {
   en: {
     lang_group: 'Interface language', theme_toggle: 'Toggle light/dark theme',
     theme_to_dark: 'Switch to dark theme', theme_to_light: 'Switch to light theme',
-    add_video: '+ add video', queue: 'queue', download_all: '↓ download all .zip', job_list: 'Job list',
+    add_video: '+ add video', queue: 'queue', download_all: '↓ download all .zip', retry_failed: '↻ retry failed ({n})', clear_done: '× clear done ({n})', confirm_clear_done: 'Delete {n} finished jobs and their output files?', job_list: 'Job list',
     empty_a: 'Queue is empty. Press ', empty_b: ' or ',
     loading_config: 'Reading server config…', config_failed: 'Server config not available.', no_job: 'No jobs yet.',
     add_title: 'add video', close: 'Close',
+    g_mode: 'job', mode_full: 'full dub', mode_srt: 'from .srt', mode_transform: 'flip / credit only',
+    full_help: 'Transcribe, translate to Vietnamese, dub, burn subtitles.',
+    srt_help: 'Uses your SRT for subtitles + voice-over. Skips transcription and translation.',
+    transform_help: 'No speech recognition, no translation, no voice-over. Only mirror, blur, credit and cut.',
+    g_srt: 'subtitles file', srt_label: 'SRT file (Vietnamese subtitles)',
+    srt_req: 'Pick an .srt file for this mode.',
+    st_transform: 'Mirror / credit',
     g_source: 'source', source_aria: 'Video source',
     drop_title: 'Choose or drop videos', drop_meta: 'MP4 · MOV · MKV · WEBM · AVI · M4V · processed in order',
     files_n: '{n} videos', files_meta: '{n} files · {size} · processed in order', no_files: 'No video yet. Pick at least one file.',
@@ -625,10 +655,11 @@ const I18N = {
     devices: 'devices (CPU / GPU)', translate_device: 'translation (offline)',
     submit: 'add to queue', adding_links: 'Adding links…', uploading: 'Uploading…',
     not_analyzed: 'Link not analyzed yet. Press "analyze", then pick videos.', none_selected: 'No video selected.',
+    vid_done: '[dubbed]', vid_queued: '[in queue]',
     adding_n: 'Adding video {i}/{n}…', add_link_failed: 'Adding the link failed: {msg}',
     uploading_n: 'Uploading {i}/{n}: {name}', upload_failed: 'Upload failed ({name}): {msg}',
     ctl_pause: '[pause]', ctl_pause_title: 'Pause', ctl_resume: '[resume]', ctl_resume_title: 'Resume',
-    ctl_cancel: '[cancel]', ctl_cancel_title: 'Cancel job',
+    ctl_cancel: '[cancel]', ctl_cancel_title: 'Cancel job', ctl_remove_title: 'Delete job and its files', confirm_remove: 'Delete job "{name}" and its output files?',
     chip_running: 'running {p}%', chip_queued: 'queued #{n}', chip_paused: 'paused', chip_done: 'done {t}', chip_error: 'error',
     warning: 'Warning: {w}', dl_burned_orig: 'vi_burned.mp4 (original audio)',
     stats: '{n} jobs · {d} done · total processing {tt} · avg {at}/job',
@@ -659,10 +690,17 @@ const I18N = {
   vi: {
     lang_group: 'Ngôn ngữ giao diện', theme_toggle: 'Chuyển giao diện sáng/tối',
     theme_to_dark: 'Chuyển sang giao diện tối', theme_to_light: 'Chuyển sang giao diện sáng',
-    add_video: '+ thêm video', queue: 'hàng đợi', download_all: '↓ tải tất cả .zip', job_list: 'Danh sách job',
+    add_video: '+ thêm video', queue: 'hàng đợi', download_all: '↓ tải tất cả .zip', retry_failed: '↻ chạy lại job lỗi ({n})', clear_done: '× xoá job đã xong ({n})', confirm_clear_done: 'Xoá {n} job đã xong cùng các file đầu ra?', job_list: 'Danh sách job',
     empty_a: 'Hàng đợi trống. Bấm ', empty_b: ' hoặc nhấn ',
     loading_config: 'Đang đọc cấu hình server…', config_failed: 'Server config chưa sẵn sàng.', no_job: 'Chưa có job.',
     add_title: 'thêm video', close: 'Đóng',
+    g_mode: 'loại job', mode_full: 'dub full', mode_srt: 'từ .srt', mode_transform: 'chỉ flip / cre',
+    full_help: 'Nhận dạng, dịch tiếng Việt, lồng tiếng và burn phụ đề.',
+    srt_help: 'Dùng SRT của bạn cho phụ đề + lồng tiếng. Bỏ qua nhận dạng và dịch.',
+    transform_help: 'Không nhận dạng, không dịch, không lồng tiếng. Chỉ lật hình, làm mờ, ghi cre và cắt.',
+    g_srt: 'file phụ đề', srt_label: 'File SRT (phụ đề tiếng Việt)',
+    srt_req: 'Chọn file .srt cho chế độ này.',
+    st_transform: 'Lật hình / cre',
     g_source: 'nguồn', source_aria: 'Nguồn video',
     drop_title: 'Chọn hoặc thả nhiều video', drop_meta: 'MP4 · MOV · MKV · WEBM · AVI · M4V · chạy lần lượt',
     files_n: '{n} video', files_meta: '{n} file · {size} · chạy lần lượt', no_files: 'Chưa có video. Chọn ít nhất một file để tiếp tục.',
@@ -686,10 +724,11 @@ const I18N = {
     devices: 'thiết bị chạy (CPU / GPU)', translate_device: 'dịch (offline)',
     submit: 'thêm vào hàng đợi', adding_links: 'Đang thêm link…', uploading: 'Đang upload…',
     not_analyzed: 'Chưa phân tích link. Bấm "phân tích" rồi chọn video.', none_selected: 'Chưa chọn video nào.',
+    vid_done: '[đã dịch]', vid_queued: '[đang chờ]',
     adding_n: 'Đang thêm video {i}/{n}…', add_link_failed: 'Thêm link thất bại: {msg}',
     uploading_n: 'Đang upload {i}/{n}: {name}', upload_failed: 'Upload thất bại ({name}): {msg}',
     ctl_pause: '[dừng]', ctl_pause_title: 'Tạm dừng', ctl_resume: '[tiếp]', ctl_resume_title: 'Tiếp tục',
-    ctl_cancel: '[huỷ]', ctl_cancel_title: 'Huỷ job',
+    ctl_cancel: '[huỷ]', ctl_cancel_title: 'Huỷ job', ctl_remove_title: 'Xoá job và file của nó', confirm_remove: 'Xoá job "{name}" cùng các file đầu ra?',
     chip_running: 'chạy {p}%', chip_queued: 'chờ #{n}', chip_paused: 'dừng', chip_done: 'xong {t}', chip_error: 'lỗi',
     warning: 'Cảnh báo: {w}', dl_burned_orig: 'vi_burned.mp4 (audio gốc)',
     stats: 'Tổng {n} job · {d} xong · Tổng thời gian xử lý {tt} · TB {at}/job',
@@ -755,6 +794,33 @@ const serverStatus = document.getElementById('serverStatus');
 const queueSummary = document.getElementById('queueSummary');
 const queueStats = document.getElementById('queueStats');
 const downloadAllBtn = document.getElementById('downloadAllBtn');
+const retryBtn = document.getElementById('retryBtn');
+retryBtn.addEventListener('click', async () => {
+  retryBtn.disabled = true;
+  try {
+    const response = await fetch('/api/jobs/retry-errors', { method: 'POST' });
+    if (!response.ok) throw new Error(await response.text());
+  } catch (error) {
+    finishWithError(error);
+  } finally {
+    retryBtn.disabled = false;
+    pollQueue();
+  }
+});
+const clearDoneBtn = document.getElementById('clearDoneBtn');
+clearDoneBtn.addEventListener('click', async () => {
+  if (!confirm(t('confirm_clear_done', { n: clearDoneBtn.dataset.n }))) return;
+  clearDoneBtn.disabled = true;
+  try {
+    const response = await fetch('/api/jobs/clear-done', { method: 'POST' });
+    if (!response.ok) throw new Error(await response.text());
+  } catch (error) {
+    finishWithError(error);
+  } finally {
+    clearDoneBtn.disabled = false;
+    pollQueue();
+  }
+});
 const queueList = document.getElementById('queueList');
 const queueCount = document.getElementById('queueCount');
 const queueEmpty = document.getElementById('queueEmpty');
@@ -863,12 +929,28 @@ const STEP_KEYS = [
   ['Downloading', 'st_download'], ['Cutting', 'st_cut'], ['Extracting audio', 'st_audio'],
   ['Transcribing', 'st_asr'], ['Translating', 'st_translate'], ['Muxing', 'st_mux'],
   ['Generating Vietnamese voice-over', 'st_dub'], ['Burning', 'st_burn'],
+  ['Transforming', 'st_transform'],
 ];
 function stepKey(step) {
   const hit = STEP_KEYS.find(([prefix]) => (step || '').startsWith(prefix));
   return hit ? hit[1] : { Waiting: 'st_waiting', Done: 'st_done', Failed: 'st_failed' }[step];
 }
 function jobSteps(opts = {}) {
+  if (opts.job_mode === 'transform') {
+    const trim = opts.trim_start || opts.trim_end;
+    return STEP_KEYS.map(([, key]) => key).filter(key =>
+      (key !== 'st_download' || opts.video_url) && (key !== 'st_cut' || trim) &&
+      key !== 'st_audio' && key !== 'st_asr' && key !== 'st_translate' &&
+      key !== 'st_mux' && key !== 'st_dub' && key !== 'st_burn');
+  }
+  if (opts.job_mode === 'srt') {
+    const trim = opts.trim_start || opts.trim_end;
+    return STEP_KEYS.map(([, key]) => key).filter(key =>
+      (key !== 'st_download' || opts.video_url) && (key !== 'st_cut' || trim) &&
+      key !== 'st_audio' && key !== 'st_asr' && key !== 'st_translate' &&
+      (key !== 'st_dub' || opts.dub !== 'false') &&
+      (key !== 'st_burn' || opts.export_mode === 'burn'));
+  }
   const trim = opts.trim_start || opts.trim_end;
   return STEP_KEYS.map(([, key]) => key).filter(key =>
     (key !== 'st_download' || opts.video_url) && (key !== 'st_cut' || trim) &&
@@ -1038,11 +1120,17 @@ function renderVideoList() {
     item.className = 'video-item';
     const cb = document.createElement('input');
     cb.type = 'checkbox';
-    cb.checked = true;
+    cb.checked = !video.status;  // already dubbed or queued: unticked, still tickable to redo it
     cb.dataset.index = i;
     cb.addEventListener('change', updateStartButton);
     const title = document.createElement('span');
     title.textContent = `${i + 1}. ${video.title}`;
+    if (video.status) {
+      const tag = document.createElement('span');
+      tag.className = 'video-tag';
+      tag.textContent = ` ${t('vid_' + video.status)}`;
+      title.append(tag);
+    }
     item.append(cb, title);
     videoList.append(item);
   });
@@ -1075,6 +1163,31 @@ whisperDevice.addEventListener('change', () => {
 });
 
 function updateVolumeVisibility() { volumeControls.hidden = !dubToggle.checked; }
+
+// Transform mode: flip / blur / credit / cut only — hide the full-pipeline sections.
+const jobModeRadios = form.querySelectorAll('input[name="job_mode"]');
+const recogGroup = document.getElementById('recogGroup');
+const burnGroupTitle = document.querySelector('#burnGroup .group-title');
+const fontSizeField = document.getElementById('fontSizeField');
+const dubGroup = document.getElementById('dubGroup');
+function currentJobMode() { const el = form.querySelector('input[name="job_mode"]:checked'); return el ? el.value : 'full'; }
+const srtGroup = document.getElementById('srtGroup');
+const srtFileInput = document.getElementById('srtFile');
+const jobModeHelp = document.getElementById('jobModeHelp');
+const modeHelpKey = { full: 'full_help', srt: 'srt_help', transform: 'transform_help' };
+function updateJobModeUi() {
+  const mode = currentJobMode();
+  const transform = mode === 'transform';
+  const srt = mode === 'srt';
+  recogGroup.hidden = transform || srt;   // neither light mode needs Whisper or the translator
+  srtGroup.hidden = !srt;
+  dubGroup.hidden = transform;            // .srt mode still dubs (voice-over from your SRT)
+  fontSizeField.hidden = transform;
+  jobModeHelp.dataset.i18n = modeHelpKey[mode] || 'full_help';
+  if (burnGroupTitle) burnGroupTitle.dataset.i18n = transform ? 'mode_transform' : 'g_burn';
+  applyI18n();
+}
+jobModeRadios.forEach(r => r.addEventListener('change', updateJobModeUi));
 
 // Source credit: the name field shows with its checkbox; analyzing a YouTube link fills in the channel
 // unless the user typed a name (dataset.auto marks a value we filled in ourselves).
@@ -1177,6 +1290,14 @@ form.addEventListener('submit', async event => {
   startBtn.disabled = true;
   startBtn.dataset.state = 'loading';
   const url = currentSource() === 'url';
+  if (currentJobMode() === 'srt' && !srtFileInput.files.length) {
+    uploading = false;
+    startBtn.disabled = false;
+    startBtn.dataset.state = '';
+    startLabel.textContent = t('submit');
+    formError.textContent = t('srt_req');
+    return;
+  }
   startLabel.textContent = t(url ? 'adding_links' : 'uploading');
 
   const makeFd = () => {
@@ -1188,6 +1309,7 @@ form.addEventListener('submit', async event => {
     fd.set('background_volume', String(Number(bgVolume.value) / 100));
     fd.set('voice_volume', String(Number(voiceVolume.value) / 100));
     fd.set('cover_bottom', String(Number(coverBottom.value) / 100));
+    if (srtFileInput.files.length) fd.append('srt_file', srtFileInput.files[0]);
     return fd;
   };
 
@@ -1223,6 +1345,7 @@ form.addEventListener('submit', async event => {
         await response.json();
       }
       fileInput.value = '';
+      srtFileInput.value = '';
       resetDrop();
     }
     addDialog.close();
@@ -1244,13 +1367,18 @@ async function pollQueue() {
     const response = await fetch('/api/queue');
     if (!response.ok) throw new Error(await response.text());
     const data = await response.json();
+    if (pollFailed) {
+      pollFailed = false;
+      errorBox.textContent = '';
+    }
     renderQueue(data.jobs || []);
   } catch (error) {
-    if (pollTimer) clearInterval(pollTimer);
-    pollTimer = null;
+    // Keep polling: a server restart is a few seconds, and the next answer clears the error.
+    pollFailed = true;
     finishWithError(error);
   }
 }
+let pollFailed = false;
 
 function ctlButton(cls, labelKey, titleKey, onClick) {
   const btn = document.createElement('button');
@@ -1283,7 +1411,11 @@ function createRow(jobId) {
   const pause = ctlButton('ctl-btn', 'ctl_pause', 'ctl_pause_title', btn => control(jobId, 'pause', btn));
   const resume = ctlButton('ctl-btn', 'ctl_resume', 'ctl_resume_title', btn => control(jobId, 'resume', btn));
   const cancel = ctlButton('ctl-btn ctl-cancel', 'ctl_cancel', 'ctl_cancel_title', btn => control(jobId, 'cancel', btn));
-  actions.append(chip, pause, resume, cancel);
+  // ponytail: /cancel already deletes any job that is not running, so it doubles as remove
+  const remove = ctlButton('ctl-btn ctl-cancel', 'delete', 'ctl_remove_title', btn => {
+    if (confirm(t('confirm_remove', { name: article._ui.name.textContent }))) control(jobId, 'cancel', btn);
+  });
+  actions.append(chip, pause, resume, cancel, remove);
   head.append(title, actions);
 
   const progressTrack = document.createElement('div');
@@ -1309,7 +1441,7 @@ function createRow(jobId) {
   outputs.className = 'outputs';
 
   article.append(head, progressTrack, line, error, warn, outputs);
-  article._ui = { name, meta, chip, pause, resume, cancel, progressBar, progressRest, progressTrack, line, error, warn, outputs };
+  article._ui = { name, meta, chip, pause, resume, cancel, remove, progressBar, progressRest, progressTrack, line, error, warn, outputs };
   applyI18n(article);
   return article;
 }
@@ -1347,9 +1479,11 @@ function updateRow(article, job) {
   ui.pause.hidden = state === 'done' || state === 'error' || state === 'paused';
   ui.resume.hidden = state !== 'paused';
   ui.cancel.hidden = state === 'done' || state === 'error';
+  ui.remove.hidden = !ui.cancel.hidden;
   ui.pause.disabled = false;
   ui.resume.disabled = false;
   ui.cancel.disabled = false;
+  ui.remove.disabled = false;
 
   const progress = Math.max(0, Math.min(100, job.progress || 0));
   const filled = Math.round(progress * PROGRESS_CELLS / 100);
@@ -1418,6 +1552,12 @@ function renderQueue(jobs) {
     queueStats.hidden = true;
   }
   downloadAllBtn.hidden = !(!running && waiting === 0 && zippable.length > 0);
+  const failed = jobs.filter(job => job.status === 'error').length;
+  retryBtn.hidden = failed === 0;
+  retryBtn.textContent = t('retry_failed', { n: failed });
+  clearDoneBtn.hidden = done.length === 0;
+  clearDoneBtn.dataset.n = done.length;
+  clearDoneBtn.textContent = t('clear_done', { n: done.length });
 
   if (running) {
     const name = running.options?.original_stem || running.id;
@@ -1519,6 +1659,7 @@ setLang(lang);
 updateSourceUi();
 updateSourceLangUi();
 updateVolumeVisibility();
+updateJobModeUi();
 setPreviewHint('preview_idle');
 refreshClonedVoices();
 loadConfig();
