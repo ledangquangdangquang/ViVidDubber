@@ -29,6 +29,8 @@ video -> (optional cut) -> audio -> subtitles (Whisper) -> translate to Vietname
 - **Speech-to-text**: Faster-Whisper on GPU (falls back to CPU), source language English, Chinese or Japanese.
 - **Translation**: HuggingFace Hy-MT2-1.8B (offline, 4-bit, default), Google Translate (online, free), or EnViT5 (offline, English only).
 - **Voice-over**: VieNeu-TTS (offline, 23 Vietnamese voices, voice cloning, default) or Edge-TTS (online, 2 voices). Clips are fitted to the subtitle timing automatically.
+- **Fix the translation**: tick *stop after translating* and the job waits after translation; `[edit subs]` opens every line next to the original, saving continues to the voice-over. Works on finished jobs too: only the edited lines are voiced again.
+- **Keep the music**: optional vocal removal (Demucs `htdemucs`, ~80 MB model, fits a 4 GB GPU) drops the original voice and keeps the music/effects under the Vietnamese voice-over.
 - **Video**: burned-in Vietnamese subtitles (NVENC when available), soft-subtitle MP4, optional cut (start/end time), horizontal flip, a blur band to hide the source video's own subtitles, and a "Cre: <channel>" source credit.
 - **Subtitles only**: untick the voice-over option to get burned Vietnamese subtitles over the original audio.
 - **Batch queue**: many files or a whole YouTube playlist, processed one by one; pause / resume / cancel; download all results as a zip.
@@ -228,7 +230,7 @@ Default mix: original audio at 10 %, Vietnamese voice at 200 %; set original aud
 - `GET|POST /api/clone-voices`, `DELETE /api/clone-voices/{name}`: saved clone voices
 - `POST /api/preview-voice`: short voice sample
 
-Main `POST /api/jobs` fields: `job_mode` (`full` default; `srt` = skip transcription/translation and dub from an uploaded `srt_file` (Vietnamese SRT drives both subtitles and voice-over); `transform` = flip/blur/credit/cut only), `source_lang` (`en`/`zh`/`ja`), `whisper_model`, `whisper_device`, `translation_provider` (`huggingface`/`google`/`envit5`), `translate_device`, `translate`, `dub`, `tts_provider` (`vieneu`/`edge`), `tts_voice`, `tts_device`, `background_volume` (0–1), `voice_volume`, `subtitle_font_size`, `trim_start`, `trim_end`, `flip`, `cover_bottom` (0–0.4), `show_source`, `source_credit`, `clone_ref_audio` / `clone_voice_name`.
+Main `POST /api/jobs` fields: `job_mode` (`full` default; `srt` = skip transcription/translation and dub from an uploaded `srt_file` (Vietnamese SRT drives both subtitles and voice-over); `transform` = flip/blur/credit/cut only), `source_lang` (`en`/`zh`/`ja`), `whisper_model`, `whisper_device`, `translation_provider` (`huggingface`/`google`/`envit5`), `translate_device`, `translate`, `dub`, `tts_provider` (`vieneu`/`edge`), `tts_voice`, `tts_device`, `background_volume` (0–1), `voice_volume`, `separate_vocals` / `separate_device`, `review_srt`, `subtitle_font_size`, `trim_start`, `trim_end`, `flip`, `cover_bottom` (0–0.4), `show_source`, `source_credit`, `clone_ref_audio` / `clone_voice_name`.
 
 ## FAQ
 

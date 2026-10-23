@@ -143,7 +143,7 @@ def probe_media(video_path: Path) -> dict:
     return json.loads(result.stdout)
 
 
-def extract_audio(video_path: Path, output_audio_path: Path, sample_rate: int = 16000) -> Path:
+def extract_audio(video_path: Path, output_audio_path: Path, sample_rate: int = 16000, channels: int = 1) -> Path:
     require_tool("ffmpeg")
     output_audio_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
@@ -151,7 +151,7 @@ def extract_audio(video_path: Path, output_audio_path: Path, sample_rate: int = 
         "-y",
         "-i", str(video_path),
         "-vn",
-        "-ac", "1",
+        "-ac", str(channels),
         "-ar", str(sample_rate),
         "-c:a", "pcm_s16le",
         str(output_audio_path),

@@ -267,6 +267,7 @@ select:focus-visible, .text-input:focus-visible { border-color: var(--color-acce
 select:disabled { opacity: 0.5; cursor: not-allowed; }
 .text-input::placeholder { color: var(--color-rule-2); }
 .text-input:user-invalid { border-color: var(--color-error); }
+textarea.text-input { height: auto; padding-block: 0.5lh; font: inherit; resize: vertical; }
 input[type="file"] { width: 100%; max-width: 100%; color: var(--color-muted); font-size: var(--text-sm); }
 input[type="file"]::file-selector-button { margin-inline-end: 1ch; padding: 0.25rem 1ch; border: var(--rule-hair) solid var(--color-rule-2); border-radius: var(--radius); background: transparent; color: var(--color-ink); font: inherit; cursor: pointer; }
 
@@ -406,6 +407,21 @@ details.more[open] > summary { margin-block-end: var(--space-sm); }
 
     <div class="sheet-body">
       <section class="group">
+        <h3 class="group-title" data-i18n="g_preset">preset</h3>
+        <div class="inline">
+          <select id="presetSelect" data-i18n-attr="aria-label:g_preset">
+            <option value="" data-i18n="none_opt">— none —</option>
+          </select>
+          <button type="button" id="deletePresetBtn" class="ctl-btn ctl-cancel" data-i18n="delete" data-i18n-attr="title:delete_preset_title">[delete]</button>
+        </div>
+        <div class="inline">
+          <input class="text-input" id="presetName" type="text" maxlength="40" data-i18n-attr="placeholder:preset_name_ph;aria-label:preset_name_aria">
+          <button type="button" id="savePresetBtn" class="btn" data-i18n="save">save</button>
+        </div>
+        <span class="field-help" data-i18n="preset_help">Saves the options below (not the video, cut times or source name). Picking a preset fills them in; it is picked again on the next visit.</span>
+      </section>
+
+      <section class="group">
         <h3 class="group-title" data-i18n="g_mode">job</h3>
         <div class="tabs" role="radiogroup" data-i18n-attr="aria-label:g_mode">
           <label><input type="radio" name="job_mode" value="full" checked><span data-i18n="mode_full">full dub</span></label>
@@ -430,7 +446,7 @@ details.more[open] > summary { margin-block-end: var(--space-sm); }
         </div>
         <div id="urlSource" class="field" hidden>
           <div class="inline">
-            <input class="text-input" type="url" id="videoUrl" name="video_url" placeholder="https://youtu.be/…" data-i18n-attr="aria-label:youtube_link">
+            <textarea class="text-input" id="videoUrl" name="video_url" rows="3" placeholder="https://youtu.be/…&#10;https://youtu.be/…" data-i18n-attr="aria-label:youtube_link"></textarea>
             <button type="button" id="resolveBtn" class="btn" data-i18n="analyze">analyze</button>
           </div>
           <div id="videoList" class="video-list" hidden></div>
@@ -451,8 +467,7 @@ details.more[open] > summary { margin-block-end: var(--space-sm); }
         <h3 class="group-title" data-i18n="g_srt">subtitles file</h3>
         <div class="field" id="srtFileField">
           <label for="srtFile" data-i18n="srt_label">SRT file (Vietnamese subtitles)</label>
-          <input class="file-input" id="srtFile" name="srt_file" type="file" accept=".srt,application/x-subrip,text/plain">
-          <span class="field-help" data-i18n="srt_help">Used for both the on-screen subtitles and the voice-over. Skips transcription and translation.</span>
+          <input id="srtFile" name="srt_file" type="file" accept=".srt,application/x-subrip,text/plain">
         </div>
       </section>
 
@@ -487,6 +502,7 @@ details.more[open] > summary { margin-block-end: var(--space-sm); }
           <span class="field-help" id="translationProviderHelp"></span>
         </div>
         <label class="check"><input id="translateToggle" type="checkbox" checked><span class="box" aria-hidden="true"></span><span data-i18n="translate_vi">translate to Vietnamese</span></label>
+        <label class="check"><input id="reviewSrt" name="review_srt" value="true" type="checkbox"><span class="box" aria-hidden="true"></span><span data-i18n="review_srt">stop after translating so I can fix the subtitles</span></label>
       </section>
 
       <section class="group" id="burnGroup">
@@ -535,6 +551,10 @@ details.more[open] > summary { margin-block-end: var(--space-sm); }
               <output id="voiceVolumeVal" for="voiceVolume">200%</output>
             </div>
           </div>
+        </div>
+        <div class="field" id="separateField">
+          <label class="check"><input id="separateVocals" name="separate_vocals" value="true" type="checkbox"><span class="box" aria-hidden="true"></span><span data-i18n="separate">remove the original voice, keep the music (Demucs)</span></label>
+          <span class="field-help" data-i18n="separate_help">"Original audio" then sets the music level: 60–100% works well. First run downloads an ~80 MB model.</span>
         </div>
         <div class="field">
           <label for="ttsProvider">engine</label>
@@ -595,6 +615,13 @@ details.more[open] > summary { margin-block-end: var(--space-sm); }
                 <option value="cuda" selected>GPU (CUDA)</option>
               </select>
             </div>
+            <div class="field">
+              <label for="separateDevice" data-i18n="separate_device">vocal removal (Demucs)</label>
+              <select id="separateDevice" name="separate_device">
+                <option value="cpu">CPU</option>
+                <option value="cuda" selected>GPU (CUDA)</option>
+              </select>
+            </div>
             <div class="field" id="ttsDeviceField">
               <label for="ttsDevice">VieNeu-TTS</label>
               <select id="ttsDevice" name="tts_device">
@@ -610,6 +637,23 @@ details.more[open] > summary { margin-block-end: var(--space-sm); }
     <footer class="sheet-foot">
       <p class="form-error" id="formError" role="alert"></p>
       <button class="btn btn-primary" id="startBtn" type="submit"><span id="startLabel"></span> <kbd>↵</kbd></button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog class="sheet" id="srtDialog" aria-labelledby="srtTitle">
+  <form id="srtForm">
+    <header class="sheet-head">
+      <h2 id="srtTitle" data-i18n="srt_edit_title">edit subtitles</h2>
+      <button type="button" class="ctl-btn" id="closeSrtBtn" data-i18n-attr="aria-label:close">[esc]</button>
+    </header>
+    <div class="sheet-body">
+      <p class="field-help" id="srtEditHelp"></p>
+      <div class="group" id="srtRows"></div>
+    </div>
+    <footer class="sheet-foot">
+      <p class="form-error" id="srtError" role="alert"></p>
+      <button class="btn btn-primary" id="srtSaveBtn" type="submit"></button>
     </footer>
   </form>
 </dialog>
@@ -641,6 +685,7 @@ const I18N = {
     g_recog: 'recognition & translation', video_lang: 'video language',
     lang_en: 'English', lang_zh: 'Chinese', lang_ja: 'Japanese',
     translate_with: 'translate with', prov_envit5: 'EnViT5 (offline, English only)', translate_vi: 'translate to Vietnamese',
+    review_srt: 'stop after translating so I can fix the subtitles',
     g_burn: 'burned subtitles', font_size: 'font size', cover: 'blur original subtitles at the bottom',
     cover_help: 'Chinese/Japanese videos with burned-in subtitles: ~12–18%.', off: 'Off', flip: 'flip video horizontally',
     show_source: 'show the source name on the video', source_name: 'source name', source_ph: 'YouTube: channel name, filled in for you',
@@ -649,16 +694,26 @@ const I18N = {
     bg_audio: 'original audio', vi_voice: 'Vietnamese voice', voice: 'voice', listen: 'listen', listen_title: 'Preview this voice',
     clone: 'voice clone (VieNeu)', saved_voice: 'saved voice', none_opt: '— none —',
     delete: '[delete]', delete_voice_title: 'Delete saved voice', confirm_delete: 'Delete voice "{name}"?',
+    g_preset: 'preset', preset_name_ph: 'preset name (empty = update the picked one)', preset_name_aria: 'Preset name',
+    preset_help: 'Saves the options below (not the video, cut times or source name). Picking a preset fills them in; it is picked again on the next visit.',
+    delete_preset_title: 'Delete preset', confirm_delete_preset: 'Delete preset "{name}"?', name_preset: 'Name the preset before saving.',
     clone_file: 'or a new sample file (clear voice, cut to 8 s)', clone_name_ph: 'name to save the voice', clone_name_aria: 'New voice name',
     save: 'save', clear_file: '[clear file]', clear_file_title: 'Remove sample file',
     pick_clone_file: 'Choose a sample file before saving.', name_clone: 'Name the voice before saving.',
-    devices: 'devices (CPU / GPU)', translate_device: 'translation (offline)',
+    devices: 'devices (CPU / GPU)', translate_device: 'translation (offline)', separate_device: 'vocal removal (Demucs)',
+    separate: 'remove the original voice, keep the music (Demucs)',
+    separate_help: '"Original audio" then sets the music level: 60–100% works well. First run downloads an ~80 MB model.',
     submit: 'add to queue', adding_links: 'Adding links…', uploading: 'Uploading…',
     not_analyzed: 'Link not analyzed yet. Press "analyze", then pick videos.', none_selected: 'No video selected.',
     vid_done: '[dubbed]', vid_queued: '[in queue]',
     adding_n: 'Adding video {i}/{n}…', add_link_failed: 'Adding the link failed: {msg}',
     uploading_n: 'Uploading {i}/{n}: {name}', upload_failed: 'Upload failed ({name}): {msg}',
     ctl_pause: '[pause]', ctl_pause_title: 'Pause', ctl_resume: '[resume]', ctl_resume_title: 'Resume',
+    edit_subs: '[edit subs]', edit_subs_title: 'Edit the Vietnamese subtitles', chip_review: 'review subs',
+    st_review: 'Waiting for your subtitle edits', srt_edit_title: 'edit subtitles', srt_loading: 'Loading subtitles…',
+    srt_save_review: 'save & continue', srt_save_redo: 'save & render again',
+    srt_help_review: 'Fix the translation, then save: the voice-over and the burned subtitles use this text. [resume] on the job keeps it as is.',
+    srt_help_redo: 'Saving renders the video again. Only edited lines are voiced again; the rest come from the cache.',
     ctl_cancel: '[cancel]', ctl_cancel_title: 'Cancel job', ctl_remove_title: 'Delete job and its files', confirm_remove: 'Delete job "{name}" and its output files?',
     chip_running: 'running {p}%', chip_queued: 'queued #{n}', chip_paused: 'paused', chip_done: 'done {t}', chip_error: 'error',
     warning: 'Warning: {w}', dl_burned_orig: 'vi_burned.mp4 (original audio)',
@@ -669,7 +724,7 @@ const I18N = {
     preview_first: 'Previewing the first video in the queue.', processing: 'Processing: {name}',
     preview_final: 'Final output: Vietnamese voice and burned-in subtitles.',
     step_n: 'Step {i}/{n} · {label}',
-    st_download: 'Download video', st_cut: 'Cut video', st_audio: 'Extract audio', st_asr: 'Speech recognition',
+    st_download: 'Download video', st_cut: 'Cut video', st_separate: 'Remove original voice', st_audio: 'Extract audio', st_asr: 'Speech recognition',
     st_translate: 'Translate subtitles', st_mux: 'Mux subtitles', st_dub: 'Voice-over', st_burn: 'Burn subtitles',
     st_waiting: 'Waiting', st_done: 'Done', st_failed: 'Failed',
     help_google: 'Google Translate, free, no API key',
@@ -710,6 +765,7 @@ const I18N = {
     g_recog: 'nhận dạng & dịch', video_lang: 'ngôn ngữ video',
     lang_en: 'Tiếng Anh', lang_zh: 'Tiếng Trung', lang_ja: 'Tiếng Nhật',
     translate_with: 'dịch bằng', prov_envit5: 'EnViT5 (offline, chỉ tiếng Anh)', translate_vi: 'dịch sang tiếng Việt',
+    review_srt: 'dừng sau khi dịch để tôi sửa phụ đề',
     g_burn: 'phụ đề burn', font_size: 'cỡ chữ', cover: 'làm mờ phụ đề gốc ở đáy',
     cover_help: 'Video Trung/Nhật có phụ đề in sẵn: ~12–18%.', off: 'Tắt', flip: 'lật video ngang',
     show_source: 'ghi tên nguồn lên video', source_name: 'tên nguồn', source_ph: 'YouTube: tự điền tên kênh',
@@ -718,16 +774,26 @@ const I18N = {
     bg_audio: 'audio gốc', vi_voice: 'giọng Việt', voice: 'giọng đọc', listen: 'nghe', listen_title: 'Nghe thử giọng',
     clone: 'clone giọng (VieNeu)', saved_voice: 'giọng đã lưu', none_opt: '— không dùng —',
     delete: '[xoá]', delete_voice_title: 'Xoá giọng đã lưu', confirm_delete: 'Xoá giọng "{name}"?',
+    g_preset: 'cấu hình sẵn', preset_name_ph: 'tên cấu hình (để trống = cập nhật cái đang chọn)', preset_name_aria: 'Tên cấu hình',
+    preset_help: 'Lưu các tuỳ chọn bên dưới (trừ video, thời điểm cắt và tên nguồn). Chọn một cấu hình để điền lại; lần mở sau tự chọn lại.',
+    delete_preset_title: 'Xoá cấu hình', confirm_delete_preset: 'Xoá cấu hình "{name}"?', name_preset: 'Đặt tên cấu hình trước khi lưu.',
     clone_file: 'hoặc file mẫu mới (giọng rõ, tự cắt còn 8 giây)', clone_name_ph: 'tên để lưu giọng', clone_name_aria: 'Tên giọng mới',
     save: 'lưu', clear_file: '[bỏ file]', clear_file_title: 'Bỏ file mẫu',
     pick_clone_file: 'Chọn file mẫu trước khi lưu.', name_clone: 'Đặt tên cho giọng trước khi lưu.',
-    devices: 'thiết bị chạy (CPU / GPU)', translate_device: 'dịch (offline)',
+    devices: 'thiết bị chạy (CPU / GPU)', translate_device: 'dịch (offline)', separate_device: 'tách giọng (Demucs)',
+    separate: 'bỏ giọng gốc, giữ nhạc nền (Demucs)',
+    separate_help: 'Khi bật, thanh "audio gốc" chỉnh mức nhạc nền: nên đặt 60–100%. Lần đầu tải model ~80 MB.',
     submit: 'thêm vào hàng đợi', adding_links: 'Đang thêm link…', uploading: 'Đang upload…',
     not_analyzed: 'Chưa phân tích link. Bấm "phân tích" rồi chọn video.', none_selected: 'Chưa chọn video nào.',
     vid_done: '[đã dịch]', vid_queued: '[đang chờ]',
     adding_n: 'Đang thêm video {i}/{n}…', add_link_failed: 'Thêm link thất bại: {msg}',
     uploading_n: 'Đang upload {i}/{n}: {name}', upload_failed: 'Upload thất bại ({name}): {msg}',
     ctl_pause: '[dừng]', ctl_pause_title: 'Tạm dừng', ctl_resume: '[tiếp]', ctl_resume_title: 'Tiếp tục',
+    edit_subs: '[sửa phụ đề]', edit_subs_title: 'Sửa phụ đề tiếng Việt', chip_review: 'chờ sửa phụ đề',
+    st_review: 'Chờ bạn sửa phụ đề', srt_edit_title: 'sửa phụ đề', srt_loading: 'Đang tải phụ đề…',
+    srt_save_review: 'lưu & chạy tiếp', srt_save_redo: 'lưu & làm lại video',
+    srt_help_review: 'Sửa bản dịch rồi lưu: giọng đọc và phụ đề burn dùng nội dung này. Bấm [tiếp] ở job để giữ nguyên bản dịch.',
+    srt_help_redo: 'Lưu sẽ làm lại video. Chỉ dòng đã sửa được đọc lại, các dòng khác lấy từ cache.',
     ctl_cancel: '[huỷ]', ctl_cancel_title: 'Huỷ job', ctl_remove_title: 'Xoá job và file của nó', confirm_remove: 'Xoá job "{name}" cùng các file đầu ra?',
     chip_running: 'chạy {p}%', chip_queued: 'chờ #{n}', chip_paused: 'dừng', chip_done: 'xong {t}', chip_error: 'lỗi',
     warning: 'Cảnh báo: {w}', dl_burned_orig: 'vi_burned.mp4 (audio gốc)',
@@ -738,7 +804,7 @@ const I18N = {
     preview_first: 'Preview video đầu tiên trong hàng đợi.', processing: 'Đang xử lý: {name}',
     preview_final: 'Preview output cuối: giọng Việt và phụ đề đã burn vào hình.',
     step_n: 'Bước {i}/{n} · {label}',
-    st_download: 'Tải video', st_cut: 'Cắt video', st_audio: 'Tách audio', st_asr: 'Nhận dạng giọng',
+    st_download: 'Tải video', st_cut: 'Cắt video', st_separate: 'Tách giọng gốc', st_audio: 'Tách audio', st_asr: 'Nhận dạng giọng',
     st_translate: 'Dịch phụ đề', st_mux: 'Ghép phụ đề', st_dub: 'Lồng tiếng', st_burn: 'Burn phụ đề',
     st_waiting: 'Đang chờ', st_done: 'Xong', st_failed: 'Lỗi',
     help_google: 'Google Translate free, không cần API key',
@@ -926,34 +992,36 @@ function renderVoices() {
 // ---------------------------------------------------------------- steps
 // Server step names (English, see _run_job) -> label keys, in pipeline order.
 const STEP_KEYS = [
-  ['Downloading', 'st_download'], ['Cutting', 'st_cut'], ['Extracting audio', 'st_audio'],
+  ['Downloading', 'st_download'], ['Cutting', 'st_cut'], ['Separating vocals', 'st_separate'], ['Extracting audio', 'st_audio'],
   ['Transcribing', 'st_asr'], ['Translating', 'st_translate'], ['Muxing', 'st_mux'],
   ['Generating Vietnamese voice-over', 'st_dub'], ['Burning', 'st_burn'],
   ['Transforming', 'st_transform'],
 ];
 function stepKey(step) {
   const hit = STEP_KEYS.find(([prefix]) => (step || '').startsWith(prefix));
-  return hit ? hit[1] : { Waiting: 'st_waiting', Done: 'st_done', Failed: 'st_failed' }[step];
+  return hit ? hit[1] : { Waiting: 'st_waiting', Done: 'st_done', Failed: 'st_failed', 'Review subtitles': 'st_review' }[step];
 }
 function jobSteps(opts = {}) {
   if (opts.job_mode === 'transform') {
     const trim = opts.trim_start || opts.trim_end;
     return STEP_KEYS.map(([, key]) => key).filter(key =>
-      (key !== 'st_download' || opts.video_url) && (key !== 'st_cut' || trim) &&
+      (key !== 'st_download' || opts.video_url) && (key !== 'st_cut' || trim) && key !== 'st_separate' &&
       key !== 'st_audio' && key !== 'st_asr' && key !== 'st_translate' &&
       key !== 'st_mux' && key !== 'st_dub' && key !== 'st_burn');
   }
+  // Same condition as _run_job: only a dub with some background level needs the vocal-free track.
+  const separate = opts.separate_vocals === 'true' && opts.dub !== 'false' && Number(opts.background_volume) > 0;
   if (opts.job_mode === 'srt') {
     const trim = opts.trim_start || opts.trim_end;
     return STEP_KEYS.map(([, key]) => key).filter(key =>
-      (key !== 'st_download' || opts.video_url) && (key !== 'st_cut' || trim) &&
+      (key !== 'st_download' || opts.video_url) && (key !== 'st_cut' || trim) && (key !== 'st_separate' || separate) &&
       key !== 'st_audio' && key !== 'st_asr' && key !== 'st_translate' &&
       (key !== 'st_dub' || opts.dub !== 'false') &&
       (key !== 'st_burn' || opts.export_mode === 'burn'));
   }
   const trim = opts.trim_start || opts.trim_end;
   return STEP_KEYS.map(([, key]) => key).filter(key =>
-    (key !== 'st_download' || opts.video_url) && (key !== 'st_cut' || trim) &&
+    (key !== 'st_download' || opts.video_url) && (key !== 'st_cut' || trim) && (key !== 'st_separate' || separate) &&
     (key !== 'st_translate' || opts.translate !== 'false') && (key !== 'st_dub' || opts.dub !== 'false') &&
     (key !== 'st_burn' || opts.export_mode === 'burn'));
 }
@@ -1162,7 +1230,8 @@ whisperDevice.addEventListener('change', () => {
   whisperComputeType.value = whisperDevice.value === 'cuda' ? 'int8_float16' : '';
 });
 
-function updateVolumeVisibility() { volumeControls.hidden = !dubToggle.checked; }
+const separateField = document.getElementById('separateField');
+function updateVolumeVisibility() { volumeControls.hidden = separateField.hidden = !dubToggle.checked; }
 
 // Transform mode: flip / blur / credit / cut only — hide the full-pipeline sections.
 const jobModeRadios = form.querySelectorAll('input[name="job_mode"]');
@@ -1208,6 +1277,78 @@ subtitleFontSize.addEventListener('input', () => { subtitleFontSizeVal.textConte
 coverBottom.addEventListener('input', () => { coverBottomVal.textContent = coverBottom.value === '0' ? t('off') : `${coverBottom.value}%`; });
 bgVolume.addEventListener('input', () => { bgVolumeVal.textContent = `${bgVolume.value}%`; });
 voiceVolume.addEventListener('input', () => { voiceVolumeVal.textContent = `${voiceVolume.value}%`; });
+
+// ---------------------------------------------------------------- presets
+// shortcut: presets live in this browser's localStorage; move them to the server if they must follow you to other browsers.
+// Order matters: source_lang before translation_provider, tts_provider before tts_voice (their change handlers reset the next one).
+const PRESET_FIELDS = ['job_mode', 'source_lang', 'whisper_model', 'translation_provider', 'translateToggle',
+  'subtitle_font_size', 'coverBottom', 'flip', 'show_source', 'dubToggle', 'background_volume', 'voice_volume',
+  'review_srt', 'separate_vocals', 'tts_provider', 'tts_voice', 'clone_voice_name', 'whisper_device', 'translate_device',
+  'separate_device', 'tts_device'];
+const presetSelect = document.getElementById('presetSelect');
+const presetName = document.getElementById('presetName');
+function loadPresets() { try { return JSON.parse(localStorage.getItem('presets')) || {}; } catch (_) { return {}; } }
+function storePresets(presets, current) {
+  try {
+    localStorage.setItem('presets', JSON.stringify(presets));
+    localStorage.setItem('preset', current);
+  } catch (_) { /* not persisted: fine */ }
+}
+function presetControls(key) { return form.querySelectorAll(`[name="${key}"], #${key}`); }
+function snapshotPreset() {
+  const values = {};
+  PRESET_FIELDS.forEach(key => presetControls(key).forEach(el => {
+    if (el.type !== 'radio') values[key] = el.type === 'checkbox' ? el.checked : el.value;
+    else if (el.checked) values[key] = el.value;
+  }));
+  return values;
+}
+function applyPreset(values) {
+  PRESET_FIELDS.filter(key => key in values).forEach(key => presetControls(key).forEach(el => {
+    if (el.type === 'radio') el.checked = el.value === values[key];
+    else if (el.type === 'checkbox') el.checked = values[key];
+    else el.value = values[key];
+    el.dispatchEvent(new Event(el.type === 'range' ? 'input' : 'change'));  // re-run the dependent UI
+  }));
+}
+function renderPresets(selected) {
+  const presets = loadPresets();
+  const none = new Option(t('none_opt'), '');
+  none.dataset.i18n = 'none_opt';
+  presetSelect.replaceChildren(none, ...Object.keys(presets).sort().map(n => new Option(n, n)));
+  presetSelect.value = selected in presets ? selected : '';
+}
+let presetDefaults = {};  // the page's own defaults, taken before any preset is applied
+presetSelect.addEventListener('change', () => {
+  const presets = loadPresets();
+  applyPreset(presets[presetSelect.value] || presetDefaults);  // "— none —" goes back to the defaults
+  storePresets(presets, presetSelect.value);
+});
+document.getElementById('savePresetBtn').addEventListener('click', () => {
+  const name = presetName.value.trim() || presetSelect.value;
+  if (!name) { finishWithError(new Error(t('name_preset'))); return; }
+  const presets = loadPresets();
+  presets[name] = snapshotPreset();
+  storePresets(presets, name);
+  presetName.value = '';
+  renderPresets(name);
+});
+document.getElementById('deletePresetBtn').addEventListener('click', () => {
+  const name = presetSelect.value;
+  if (!name || !confirm(t('confirm_delete_preset', { name }))) return;
+  const presets = loadPresets();
+  delete presets[name];
+  storePresets(presets, '');
+  renderPresets('');
+});
+function restorePreset() {
+  let current = '';
+  try { current = localStorage.getItem('preset') || ''; } catch (_) { /* default below */ }
+  presetDefaults = snapshotPreset();
+  renderPresets(current);
+  const values = loadPresets()[presetSelect.value];
+  if (values) applyPreset(values);
+}
 
 // ---------------------------------------------------------------- voice clone + preview
 document.getElementById('clearCloneRefBtn').addEventListener('click', () => { cloneRefAudio.value = ''; });
@@ -1309,7 +1450,6 @@ form.addEventListener('submit', async event => {
     fd.set('background_volume', String(Number(bgVolume.value) / 100));
     fd.set('voice_volume', String(Number(voiceVolume.value) / 100));
     fd.set('cover_bottom', String(Number(coverBottom.value) / 100));
-    if (srtFileInput.files.length) fd.append('srt_file', srtFileInput.files[0]);
     return fd;
   };
 
@@ -1415,7 +1555,8 @@ function createRow(jobId) {
   const remove = ctlButton('ctl-btn ctl-cancel', 'delete', 'ctl_remove_title', btn => {
     if (confirm(t('confirm_remove', { name: article._ui.name.textContent }))) control(jobId, 'cancel', btn);
   });
-  actions.append(chip, pause, resume, cancel, remove);
+  const editSubs = ctlButton('ctl-btn', 'edit_subs', 'edit_subs_title', () => openSrtEditor(article._job));
+  actions.append(chip, editSubs, pause, resume, cancel, remove);
   head.append(title, actions);
 
   const progressTrack = document.createElement('div');
@@ -1441,7 +1582,7 @@ function createRow(jobId) {
   outputs.className = 'outputs';
 
   article.append(head, progressTrack, line, error, warn, outputs);
-  article._ui = { name, meta, chip, pause, resume, cancel, remove, progressBar, progressRest, progressTrack, line, error, warn, outputs };
+  article._ui = { name, meta, chip, editSubs, pause, resume, cancel, remove, progressBar, progressRest, progressTrack, line, error, warn, outputs };
   applyI18n(article);
   return article;
 }
@@ -1460,6 +1601,7 @@ async function control(jobId, action, btn) {
 
 function updateRow(article, job) {
   const ui = article._ui;
+  article._job = job;
   const name = job.options?.original_stem || job.id;
   ui.name.textContent = name;
   ui.name.title = name;
@@ -1471,13 +1613,15 @@ function updateRow(article, job) {
   ui.chip.textContent = {
     running: t('chip_running', { p: job.progress }),
     queued: t('chip_queued', { n: job.queue_position ?? '?' }),
-    paused: t('chip_paused'),
+    paused: t(job.options?.review_pending === 'true' ? 'chip_review' : 'chip_paused'),
     done: t('chip_done', { t: humanTime(job.total_elapsed) }),
     error: t('chip_error'),
   }[state];
 
   ui.pause.hidden = state === 'done' || state === 'error' || state === 'paused';
   ui.resume.hidden = state !== 'paused';
+  // vi.srt can be edited whenever the worker is not on the job: a review stop, a pause, or after it ended.
+  ui.editSubs.hidden = !(job.files?.vi_srt && (state === 'paused' || state === 'done' || state === 'error'));
   ui.cancel.hidden = state === 'done' || state === 'error';
   ui.remove.hidden = !ui.cancel.hidden;
   ui.pause.disabled = false;
@@ -1613,6 +1757,81 @@ function finishWithError(error) {
   serverStatus.dataset.state = 'error';
 }
 
+// ---------------------------------------------------------------- subtitle editor
+// One textarea per vi.srt cue; timestamps are fixed. Saving queues the job again (see save_subtitles in app.py).
+const srtDialog = document.getElementById('srtDialog');
+const srtRows = document.getElementById('srtRows');
+const srtError = document.getElementById('srtError');
+const srtSaveBtn = document.getElementById('srtSaveBtn');
+const srtEditHelp = document.getElementById('srtEditHelp');
+let srtJobId = null;
+
+async function apiError(res) {
+  const text = await res.text();
+  try { return new Error(JSON.parse(text).detail || text); } catch (_) { return new Error(text); }
+}
+
+function srtRow(block, i) {
+  const field = document.createElement('div');
+  field.className = 'field';
+  const label = document.createElement('label');
+  label.htmlFor = `srtLine${i}`;
+  label.textContent = `${i + 1} · ${block.start.slice(0, 10)} → ${block.end.slice(0, 10)}`;  // 00:00:04,1: short cues differ in tenths
+  const source = document.createElement('span');
+  source.className = 'field-help';
+  source.textContent = block.source;
+  const text = document.createElement('textarea');
+  text.className = 'text-input';
+  text.id = `srtLine${i}`;
+  text.rows = 2;
+  text.value = block.text;
+  field.append(label, source, text);
+  return field;
+}
+
+async function openSrtEditor(job) {
+  srtJobId = job.id;
+  const rerender = job.status !== 'paused';  // done / failed: saving renders the outputs again
+  srtEditHelp.dataset.i18n = rerender ? 'srt_help_redo' : 'srt_help_review';
+  srtSaveBtn.dataset.i18n = rerender ? 'srt_save_redo' : 'srt_save_review';
+  srtError.textContent = '';
+  const loading = document.createElement('p');
+  loading.className = 'field-help';
+  loading.dataset.i18n = 'srt_loading';
+  srtRows.replaceChildren(loading);
+  applyI18n(srtDialog);
+  srtSaveBtn.disabled = true;
+  if (!srtDialog.open) srtDialog.showModal();
+  try {
+    const res = await fetch(`/api/jobs/${job.id}/subtitles`);
+    if (!res.ok) throw await apiError(res);
+    srtRows.replaceChildren(...(await res.json()).blocks.map(srtRow));
+    srtSaveBtn.disabled = false;
+  } catch (err) {
+    srtError.textContent = err.message;
+  }
+}
+
+document.getElementById('srtForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  srtSaveBtn.disabled = true;
+  try {
+    const texts = [...srtRows.querySelectorAll('textarea')].map(el => el.value);
+    const res = await fetch(`/api/jobs/${srtJobId}/subtitles`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texts }),
+    });
+    if (!res.ok) throw await apiError(res);
+    srtDialog.close();
+    pollQueue();
+  } catch (err) {
+    srtError.textContent = err.message;
+  } finally {
+    srtSaveBtn.disabled = false;
+  }
+});
+document.getElementById('closeSrtBtn').addEventListener('click', () => srtDialog.close());
+srtDialog.addEventListener('click', event => { if (event.target === srtDialog) srtDialog.close(); });  // backdrop
+
 // ---------------------------------------------------------------- server config / provider help
 async function loadConfig() {
   try {
@@ -1661,7 +1880,7 @@ updateSourceLangUi();
 updateVolumeVisibility();
 updateJobModeUi();
 setPreviewHint('preview_idle');
-refreshClonedVoices();
+refreshClonedVoices().then(restorePreset);  // after the list loads, so a saved clone voice can be picked
 loadConfig();
 pollTimer = setInterval(pollQueue, 1500);  // show jobs already queued/running after a reload
 pollQueue();

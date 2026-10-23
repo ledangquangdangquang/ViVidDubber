@@ -17,7 +17,7 @@ import time
 import uuid
 import zipfile
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from starlette.background import BackgroundTask
 
@@ -34,7 +34,8 @@ _TIME_RE = re.compile(r"\d+(:\d{1,2}){0,2}(\.\d+)?")  # trim points: 90, 1:30, 1
 JOB_TTL_SECONDS = 3600 * 6  # 6 hours
 
 from pipeline.media import burn_subtitles, download_video, extract_audio, mux_soft_subtitles, probe_media, replace_audio, resolve_video_urls, trim_video, YT_ID_RE
-from pipeline.subtitle import parse_srt, split_for_display, write_srt
+from pipeline.separate import separate_background
+from pipeline.subtitle import SubtitleBlock, parse_srt, split_for_display, write_srt
 from pipeline.transcribe import FasterWhisperTranscriber
 from pipeline.translate import EnViT5Translator, GoogleTranslator, HuggingFaceTranslator
 from pipeline.tts import DUB_PHASES, EdgeTTSEngine, VieNeuTTS, create_vietnamese_dub
@@ -433,13 +434,19 @@ def preview_voice(
 
 @app.post("/api/resolve")
 async def resolve_url(video_url: str = Form("")):
-    url = video_url.strip()
-    if not url:
+    urls = video_url.split()  # one or more links, whitespace/newline separated
+    if not urls:
         raise HTTPException(status_code=400, detail="No URL provided.")
-    try:
-        items = resolve_video_urls(url)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Failed to resolve URL: {_ANSI_RE.sub('', str(exc))}")
+    items, seen = [], set()
+    for url in urls:
+        try:
+            found = resolve_video_urls(url)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Failed to resolve URL {url}: {_ANSI_RE.sub('', str(exc))}")
+        for item in found:
+            if _youtube_id(item[0]) not in seen:
+                seen.add(_youtube_id(item[0]))
+                items.append(item)
     status = _video_statuses()
     return {"videos": [{"url": u, "title": t, "channel": c, "status": status.get(_youtube_id(u))} for u, t, c in items]}
 
@@ -492,6 +499,9 @@ async def create_job(
     tts_device: str = Form("cuda"),
     background_volume: float = Form(0.1),
     voice_volume: float = Form(2.0),
+    separate_vocals: str = Form("false"),
+    separate_device: str = Form("cuda"),
+    review_srt: str = Form("false"),
     flip: str = Form("false"),
     cover_bottom: float = Form(0.0),
     show_source: str = Form("false"),
@@ -610,6 +620,9 @@ async def create_job(
             "tts_ref_audio": ref_audio_path,
             "background_volume": str(background_volume),
             "voice_volume": str(voice_volume),
+            "separate_vocals": "true" if separate_vocals == "true" else "false",
+            "separate_device": "cuda" if separate_device == "cuda" else "cpu",
+            "review_srt": "true" if review_srt == "true" else "false",
             "flip": flip,
             "cover_bottom": str(max(0.0, min(0.4, cover_bottom))),
             "show_source": show_source,
@@ -760,6 +773,8 @@ def resume_job(job_id: str):
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
         if job.status == "paused":
+            if job.options.pop("review_pending", None):
+                job.options["reviewed"] = "true"  # [resume] on a review stop = keep the translation as is
             job.status = "queued"
             job.pause_requested = False
             job.step = "Waiting"
@@ -787,6 +802,61 @@ def cancel_job(job_id: str):
     if _delete_job(job_id):
         return {"ok": True, "status": "cancelled"}
     raise HTTPException(status_code=404, detail="Job not found")
+
+
+def _subtitle_paths(job_id: str) -> tuple[Path, Path]:
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        vi_srt, original_srt = Path(job.files.get("vi_srt", "")), Path(job.files.get("original_srt", ""))
+    if not vi_srt.is_file():
+        raise HTTPException(status_code=404, detail="Job chưa có phụ đề tiếng Việt.")
+    return vi_srt, original_srt
+
+
+@app.get("/api/jobs/{job_id}/subtitles")
+def get_subtitles(job_id: str):
+    vi_srt, original_srt = _subtitle_paths(job_id)
+    # Translation keeps every timestamp, so the source line is found by its slot (none in .srt mode).
+    source = {(b.start, b.end): b.text for b in parse_srt(original_srt.read_text(encoding="utf-8"))} if original_srt.is_file() else {}
+    return {"blocks": [
+        {"start": b.start, "end": b.end, "text": b.text, "source": source.get((b.start, b.end), "")}
+        for b in parse_srt(vi_srt.read_text(encoding="utf-8"))
+    ]}
+
+
+@app.post("/api/jobs/{job_id}/subtitles")
+def save_subtitles(job_id: str, texts: list[str] = Body(..., embed=True)):
+    """Rewrite vi.srt's texts (timestamps stay) and queue the job: a review stop continues to the dub; a finished
+    job renders again from the mux step, and the TTS cache (keyed by text) re-voices only the edited lines."""
+    vi_srt, _ = _subtitle_paths(job_id)
+    blocks = parse_srt(vi_srt.read_text(encoding="utf-8"))
+    if len(texts) != len(blocks):
+        raise HTTPException(status_code=400, detail=f"Cần {len(blocks)} dòng, nhận {len(texts)}.")
+    texts = [" ".join(t.split()) for t in texts]  # a blank line inside a cue would end the SRT block
+    for i, text in enumerate(texts, 1):
+        if not text or len(text) > 500:
+            raise HTTPException(status_code=400, detail=f"Dòng {i}: {'trống' if not text else 'dài quá 500 ký tự'}.")
+    with JOBS_LOCK:
+        job = JOBS[job_id]
+        if job.status in {"queued", "running"}:
+            raise HTTPException(status_code=409, detail="Job đang chạy hoặc đang chờ; dừng nó trước khi sửa phụ đề.")
+        vi_srt.write_text(write_srt([SubtitleBlock(b.index, b.start, b.end, t) for b, t in zip(blocks, texts)]), encoding="utf-8")
+        if job.status in {"done", "error"}:  # render again: drop every output built from the old subtitles
+            for kind in ("output_video", "output_dubbed_video", "output_burned_video"):
+                if kind in job.files:
+                    Path(job.files.pop(kind)).unlink(missing_ok=True)
+            (vi_srt.parent / "burned_video_only.mp4").unlink(missing_ok=True)
+            job.options["redub"] = "true"
+        job.options.pop("review_pending", None)
+        job.options["reviewed"] = "true"
+        job.status, job.step, job.error, job.progress = "queued", "Waiting", None, 0
+        job.pause_requested = False
+        job.updated_at = time.time()
+    _save_jobs()
+    _enqueue_job(job_id)
+    return {"ok": True, "status": "queued"}
 
 
 @app.get("/api/jobs/{job_id}/download/{kind}")
@@ -873,6 +943,25 @@ def _run_job(job_id: str) -> None:
             _mark_video_done(opts.get("video_url", ""))
             return
 
+        dub = opts.get("dub", "false") == "true"
+        background_wav = job_dir / "background.wav"
+        if dub and opts.get("separate_vocals") == "true" and float(opts.get("background_volume", "0.15")) > 0:
+            # Before Whisper / translation / VieNeu preload: the GPU is as empty as it gets in a job.
+            state = _begin_step(job_id, "Separating vocals (Demucs)", 14, background_wav)
+            if state is None:
+                device = opts.get("separate_device", "cuda")
+                if device == "cuda":
+                    _free_gpu()
+                stems_in, part = job_dir / "stems_in.wav", job_dir / "background.part.wav"
+                extract_audio(input_path, stems_in, 44100, channels=2)  # htdemucs's own format
+                used = separate_background(stems_in, part, device=device, free_vram=_free_translators)
+                part.replace(background_wav)
+                stems_in.unlink(missing_ok=True)
+                with JOBS_LOCK:
+                    JOBS[job_id].options["separate_device_used"] = used
+            elif state in ("pause", "cancel"):
+                return _finish_control(job_id, state)
+
         has_srt = opts.get("job_mode") == "srt" or opts.get("has_srt") == "true"
         if has_srt:  # the user's own Vietnamese SRT: no Whisper, no translator
             original_blocks = parse_srt(vi_srt.read_text(encoding="utf-8"))
@@ -909,10 +998,12 @@ def _run_job(job_id: str) -> None:
         if not original_blocks:  # every later step needs at least one cue (an empty SRT breaks the ffmpeg mux)
             raise RuntimeError("Whisper không nhận ra lời nói nào trong video (hoặc file SRT rỗng).")
 
-        dub =opts.get("dub", "false") == "true"
+        # Stop after translation so the user can fix vi.srt (POST /subtitles or [resume] continues).
+        review = (opts.get("review_srt") == "true" and opts.get("reviewed") != "true"
+                  and not has_srt and opts.get("translate", "true") == "true")
         tts_preload, preload_phases = None, {}
         DUB_PHASES.clear()  # a resumed job that skips the dub step must not log the previous job's phases
-        if dub and opts.get("tts_provider", "edge") == "vieneu" and not output_dubbed_video.exists():
+        if dub and opts.get("tts_provider", "edge") == "vieneu" and not output_dubbed_video.exists() and not review:
             # Model load + clone-ref encode + warm-up is ~13s per job (_free_gpu drops VieNeu before Whisper);
             # do it now, while translation runs, instead of inside the dub step.
             preload_engine = VieNeuTTS(
@@ -961,6 +1052,13 @@ def _run_job(job_id: str) -> None:
                     return _finish_control(job_id, state)
                 else:
                     subtitle_for_export = vi_srt
+                if review:
+                    _set_step(job_id, "Review subtitles", 70)
+                    with JOBS_LOCK:
+                        JOBS[job_id].status = "paused"
+                        JOBS[job_id].options["review_pending"] = "true"
+                    _save_jobs()
+                    return
 
         # Translation/dub work on whole sentences; only the on-screen subtitles get cut short.
         display_srt = job_dir / "display.srt"
@@ -1013,6 +1111,7 @@ def _run_job(job_id: str) -> None:
                     output_video, dub_blocks, job_dir, output_dubbed_video,
                     voice=opts.get("tts_voice", "vi-VN-HoaiMyNeural"),
                     background_volume=bg_vol, voice_volume=vc_vol,
+                    background_audio=background_wav if background_wav.exists() else None,
                     tts_provider=opts.get("tts_provider", "edge"),
                     ref_audio=opts.get("tts_ref_audio") or None,
                     tts_device=opts.get("tts_device", "cpu"),
@@ -1041,7 +1140,7 @@ def _run_job(job_id: str) -> None:
 
         # Close the last step's timing first, or stats would miss it (e.g. the burn step).
         _set_step(job_id, "Done", 100)
-        if dub:
+        if dub and opts.get("redub") != "true":  # a re-render after a subtitle edit is mostly cache hits
             _log_dub_stats(job_id, input_path, {**preload_phases, **DUB_PHASES})
         _set_job(job_id, status="done")
         _mark_video_done(opts.get("video_url", ""))
@@ -1140,6 +1239,8 @@ def _log_dub_stats(job_id: str, input_path: Path, dub_phases: dict | None = None
             "translation_provider": job.options.get("translation_provider"),
             "tts_provider": job.options.get("tts_provider", "edge"),
             "tts_device": job.options.get("tts_device"),
+            "separate_vocals": job.options.get("separate_vocals", "false"),
+            "separate_device_used": job.options.get("separate_device_used"),
             "dub_phases": dub_phases or {},
         }
         rows = _read_stats_file(_STATS_FILE)

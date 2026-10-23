@@ -151,9 +151,9 @@ class EdgeTTSEngine:
                 last_err = exc
                 time.sleep(0.4 * (attempt + 1))
 
-        print(f"[EdgeTTSEngine Warning] Failed to synthesize '{cleaned[:35]}…' ({last_err}); using silence.")
-        wav_bytes = _generate_silent_wav_bytes(0.5)
-        return wav_bytes, 0.5, 0.0
+        # Raise, don't return silence: the dub caches whatever comes back, and a cached failure stays silent
+        # on every re-render (an Edge-TTS 403 outage once filled whole caches with 0.5 s of silence).
+        raise DubbingError(f"Edge-TTS failed after 3 tries: {last_err}")
 
 
 class VieNeuTTS:
@@ -225,16 +225,16 @@ class VieNeuTTS:
             else:
                 audio = v.infer(cleaned, voice=selected_voice)
         except Exception as exc:
-            print(f"[VieNeu Warning] Failed to synthesize '{cleaned[:35]}…' ({exc}); using silence.")
-            return _generate_silent_wav_bytes(0.5), 0.5, 0.0
+            raise DubbingError(f"VieNeu-TTS failed on '{cleaned[:35]}…': {exc}") from exc  # see EdgeTTSEngine
 
         wav_bytes = _array_to_wav(audio, 48000)
         with io.BytesIO(wav_bytes) as f:
             dur = sf.info(f).duration
         return wav_bytes, dur, time.time() - start_t
 
-    def synthesize_batch(self, texts: list[str], voice: str | None = None) -> list[bytes]:
-        """All lines in one call: on GPU vieneu shares each forward step across lines (~3-4x faster than per-line infer)."""
+    def synthesize_batch(self, texts: list[str], voice: str | None = None) -> list[bytes | None]:
+        """All lines in one call: on GPU vieneu shares each forward step across lines (~3-4x faster than per-line infer).
+        None marks a line that failed, so the caller doesn't cache it."""
         v = self._lazy()
         try:
             audios = v.infer_batch(
@@ -242,8 +242,14 @@ class VieNeuTTS:
             )
         except Exception as exc:
             print(f"[VieNeu Warning] Batch synthesis failed ({exc}); falling back to one line at a time.")
-            return [self.synthesize(t, voice=voice)[0] for t in texts]
-        return [_array_to_wav(a, 48000) if len(a) else _generate_silent_wav_bytes(0.5) for a in audios]
+            out = []
+            for t in texts:
+                try:
+                    out.append(self.synthesize(t, voice=voice)[0])
+                except DubbingError:
+                    out.append(None)
+            return out
+        return [_array_to_wav(a, 48000) if len(a) else None for a in audios]  # callers pass non-empty text only
 
 
 def create_vietnamese_dub(
@@ -258,7 +264,10 @@ def create_vietnamese_dub(
     tts_provider: str = "edge",
     ref_audio: str | None = None,
     tts_device: str | None = None,
+    background_audio: Path | None = None,
 ) -> Path:
+    """`background_audio` (the original minus its vocals, see pipeline/separate.py) replaces the video's own
+    track as the background bed when `background_volume > 0`."""
     if not blocks:
         raise DubbingError("No subtitle blocks available for dubbing.")
 
@@ -273,6 +282,7 @@ def create_vietnamese_dub(
     else:
         engine = EdgeTTSEngine(default_voice=voice)
     clip_paths: list[tuple[Path, int, float]] = []
+    errors: list[str] = []
     workers = max(1, min(8, int(os.environ.get("TTS_PARALLEL", "4"))))
 
     def _render(task: tuple[SubtitleBlock, str, int, float]) -> tuple[Path, int, float] | None:
@@ -287,8 +297,9 @@ def create_vietnamese_dub(
                 clip_path.write_bytes(wav_bytes)
                 cached_path.write_bytes(wav_bytes)
             return clip_path, start_ms, slot_sec
-        except Exception as exc:
+        except Exception as exc:  # the line stays silent this time and, uncached, is retried on the next render
             print(f"[Dubbing Warning] Skipped block {block.index}: {exc}")
+            errors.append(str(exc))
             return None
 
     DUB_PHASES.clear()
@@ -319,7 +330,8 @@ def create_vietnamese_dub(
                 todo[cached_path] = text
         if todo:
             for cached_path, wav_bytes in zip(todo, engine.synthesize_batch(list(todo.values()), voice=voice)):
-                cached_path.write_bytes(wav_bytes)
+                if wav_bytes:  # a failed line is left to _render, which retries it alone
+                    cached_path.write_bytes(wav_bytes)
 
     if workers > 1:
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
@@ -333,7 +345,7 @@ def create_vietnamese_dub(
                 clip_paths.append(result)
 
     if not clip_paths:
-        raise DubbingError("No TTS clips were generated.")
+        raise DubbingError(f"No TTS clips were generated: {errors[0] if errors else 'no text to read'}")
     _phase("synth_sec")
 
     # Pass 2: Regen slow cues (> 2x slot duration)
@@ -398,7 +410,7 @@ def create_vietnamese_dub(
                 pass
 
     if background_volume > 0:
-        _mux_mixed_audio(video_path, dub_audio, output_path, background_volume, voice_volume)
+        _mux_mixed_audio(video_path, dub_audio, output_path, background_volume, voice_volume, background_audio)
     else:
         _mux_replace_audio(video_path, dub_audio, output_path, voice_volume)
     _phase("mux_sec")
@@ -514,18 +526,20 @@ def _mux_mixed_audio(
     output_path: Path,
     background_volume: float,
     voice_volume: float,
+    background_audio: Path | None = None,
 ) -> None:
     require_tool("ffmpeg")
     bg_vol = max(0.0, min(1.0, background_volume))
     vc_vol = max(0.1, min(3.0, voice_volume))
+    bg_input = ["-i", str(background_audio)] if background_audio else []
     filter_spec = (
-        f"[0:a]volume={bg_vol:.3f}[bg];"
+        f"[{2 if background_audio else 0}:a]volume={bg_vol:.3f}[bg];"
         f"[1:a]volume={vc_vol:.3f}[vc];"
         f"[bg][vc]amix=inputs=2:duration=first:dropout_transition=0,alimiter=limit=0.95[aout]"
     )
     run_command(
         [
-            "ffmpeg", "-y", "-i", str(video_path), "-i", str(audio_path),
+            "ffmpeg", "-y", "-i", str(video_path), "-i", str(audio_path), *bg_input,
             "-filter_complex", filter_spec,
             "-map", "0:v:0", "-map", "[aout]", "-map", "0:s?",
             "-c:v", "copy", "-c:s", "copy",
