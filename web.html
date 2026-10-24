@@ -934,7 +934,8 @@ const downloadOrder = ['output_burned_video', 'output_dubbed_video', 'output_vid
 const PROGRESS_CELLS = 24;
 
 let pollTimer = null;
-let badgeOn = false;
+let badgeCount = 0;
+let finishedWhileHidden = 0;
 let objectUrl = null;
 let uploading = false;
 let activePreviewJobId = null;
@@ -1078,13 +1079,17 @@ document.addEventListener('keydown', event => {
 });
 
 // ---------------------------------------------------------------- helpers
-function setBadge(on) {
-  if (badgeOn === on) return;
-  badgeOn = on;
-  faviconEl.href = on ? '/favicon-badge.svg' : '/favicon.svg';
-  document.title = on ? `🔴 ${originalTitle}` : originalTitle;
+function setBadge(count) {
+  if (badgeCount === count) return;
+  badgeCount = count;
+  faviconEl.href = count ? '/favicon-badge.svg' : '/favicon.svg';
+  document.title = count ? `(${count}) ${originalTitle}` : originalTitle;
 }
-document.addEventListener('visibilitychange', () => { if (!document.hidden) setBadge(false); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  finishedWhileHidden = 0;
+  setBadge(0);
+});
 
 function humanSize(bytes) {
   const units = ['B', 'KB', 'MB', 'GB'];
@@ -1660,7 +1665,7 @@ function renderQueue(jobs) {
     seen.add(job.id);
     const prevStatus = knownStatus.get(job.id);
     if (prevStatus && prevStatus !== job.status && (job.status === 'done' || job.status === 'error') && document.hidden) {
-      setBadge(true);
+      finishedWhileHidden++;
     }
     knownStatus.set(job.id, job.status);
     let article = rowCache.get(job.id);
@@ -1683,6 +1688,8 @@ function renderQueue(jobs) {
 
   const running = jobs.find(job => job.status === 'running');
   const waiting = jobs.filter(job => job.status === 'queued').length;
+  // badge once the whole queue is through, not after every job
+  if (finishedWhileHidden && !running && waiting === 0) setBadge(finishedWhileHidden);
   const finished = jobs.filter(job => job.status === 'done' || job.status === 'error');
   const done = jobs.filter(job => job.status === 'done');
   const zippable = done.filter(job => job.downloads?.output_burned_video || job.downloads?.output_dubbed_video);

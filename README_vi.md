@@ -241,5 +241,13 @@ Kiểm tra ô ngôn ngữ video. Video tiếng Nhật mà chạy với "Tiếng 
 **Job báo lỗi "Whisper không nhận ra lời nói nào…"?**
 Video (hoặc đoạn đã cắt) không có lời nói, ví dụ chỉ có nhạc.
 
+**YouTube báo "Sign in to confirm you're not a bot"?**
+yt-dlp cần một JavaScript runtime để giải thử thách của YouTube; thiếu nó thì YouTube coi request là bot. App tự bật **Node.js** hoặc **Deno** (cài một trong hai), còn bộ giải đi kèm dependency `yt-dlp-ejs`, nên thường chỉ cần `uv sync` và có JS runtime trên `PATH`. Khi một job dính lỗi này, app dừng luôn các job YouTube còn lại thay vì để lỗi từng cái; xử lý xong thì bấm **↻ retry failed**. Vẫn bị chặn (log có `HTTP Error 429: Too Many Requests` nghĩa là IP đang bị giới hạn, cập nhật yt-dlp không giúp được)? Chờ vài tiếng, khởi động lại router để đổi IP, hoặc dùng cookie YouTube của bạn:
+
+- Đọc thẳng từ trình duyệt đang đăng nhập YouTube (đóng trình duyệt trước): `YTDLP_COOKIES_FROM_BROWSER=firefox uv run python app.py` (dùng được cả `chrome`, `brave`, `edge`, …).
+- Hoặc xuất file `cookies.txt` [theo hướng dẫn của yt-dlp](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies): `YTDLP_COOKIES=/đường/dẫn/cookies.txt uv run python app.py`.
+
+Tài khoản tải nhiều có thể bị YouTube gắn cờ, nên dùng tài khoản phụ.
+
 **File quá lớn?**
 Tối đa 2 GB mỗi file, tối đa 50 job; job đã xong tự xoá sau 6 giờ.
