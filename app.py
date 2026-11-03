@@ -269,6 +269,27 @@ def _safe_suffix(filename: str) -> str:
     return suffix if suffix in {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"} else ".mp4"
 
 
+MAX_MUSIC_BYTES = 100 * 1024 * 1024
+
+
+def _save_music(upload: UploadFile, dest_dir: Path) -> Path:
+    """Save an uploaded background-music track as is (ffmpeg reads any format) after checking it has audio."""
+    suffix = Path(upload.filename or "").suffix.lower()
+    path = dest_dir / f"music{suffix if suffix in {'.mp3', '.wav', '.m4a', '.aac', '.ogg', '.opus', '.flac'} else ''}"
+    data = upload.file.read(MAX_MUSIC_BYTES + 1)
+    if len(data) > MAX_MUSIC_BYTES:
+        raise HTTPException(status_code=413, detail="File nhạc nền quá lớn (tối đa 100 MB).")
+    path.write_bytes(data)
+    try:
+        has_audio = any(s.get("codec_type") == "audio" for s in probe_media(path).get("streams", []))
+    except Exception:
+        has_audio = False
+    if not has_audio:
+        path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="File nhạc nền không đọc được (cần mp3, wav, m4a…).")
+    return path
+
+
 MAX_CLONE_REF_BYTES = 25 * 1024 * 1024  # 25 MB, ref clips are a few seconds
 _VOICES_DIR = _DIR / "voices"
 _VOICES_DIR.mkdir(parents=True, exist_ok=True)
@@ -336,7 +357,8 @@ def index():
 
 @app.get("/tokens.css")
 def design_tokens():
-    return FileResponse(_DIR / "tokens.css", media_type="text/css")
+    # no-cache = revalidate by ETag each load; without it browsers kept a stale copy after edits
+    return FileResponse(_DIR / "tokens.css", media_type="text/css", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/favicon.ico")
@@ -500,6 +522,8 @@ async def create_job(
     background_volume: float = Form(0.1),
     voice_volume: float = Form(2.0),
     separate_vocals: str = Form("false"),
+    music_file: UploadFile = File(None),
+    music_volume: float = Form(0.15),
     separate_device: str = Form("cuda"),
     review_srt: str = Form("false"),
     flip: str = Form("false"),
@@ -593,6 +617,14 @@ async def create_job(
         ref_audio_path = saved
         tts_provider = "vieneu"
 
+    music_path = ""
+    if dub == "true" and music_file is not None and music_file.filename:
+        try:
+            music_path = str(_save_music(music_file, job_dir))
+        except HTTPException:
+            shutil.rmtree(job_dir, ignore_errors=True)
+            raise
+
     init_files = {"input": str(input_path)}
     if has_srt:
         init_files["vi_srt"] = str(job_dir / "vi.srt")
@@ -618,10 +650,14 @@ async def create_job(
             "tts_provider": tts_provider,
             "tts_device": tts_device,
             "tts_ref_audio": ref_audio_path,
+            # shown in the UI's job details; empty for a one-off uploaded sample
+            "clone_voice_name": clone_voice_name.strip() if ref_audio_path and not (clone_ref_audio and clone_ref_audio.filename) else "",
             "background_volume": str(background_volume),
             "voice_volume": str(voice_volume),
             "separate_vocals": "true" if separate_vocals == "true" else "false",
             "separate_device": "cuda" if separate_device == "cuda" else "cpu",
+            "music_audio": music_path,
+            "music_volume": str(max(0.0, min(1.0, music_volume))),
             "review_srt": "true" if review_srt == "true" else "false",
             "flip": flip,
             "cover_bottom": str(max(0.0, min(0.4, cover_bottom))),
@@ -1112,6 +1148,8 @@ def _run_job(job_id: str) -> None:
                     voice=opts.get("tts_voice", "vi-VN-HoaiMyNeural"),
                     background_volume=bg_vol, voice_volume=vc_vol,
                     background_audio=background_wav if background_wav.exists() else None,
+                    music_audio=Path(opts["music_audio"]) if opts.get("music_audio") else None,
+                    music_volume=float(opts.get("music_volume", "0")),
                     tts_provider=opts.get("tts_provider", "edge"),
                     ref_audio=opts.get("tts_ref_audio") or None,
                     tts_device=opts.get("tts_device", "cpu"),

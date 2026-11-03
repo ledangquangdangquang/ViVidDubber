@@ -157,7 +157,7 @@ class EdgeTTSEngine:
 
 
 class VieNeuTTS:
-    """Fully offline Vietnamese TTS via VieNeu-TTS v3 Turbo (ONNX)."""
+    """Fully offline Vietnamese TTS via VieNeu-TTS v3 Turbo (PyTorch on cuda, ONNX on cpu)."""
     _instance = None
     _lock = __import__("threading").Lock()
 
@@ -265,9 +265,12 @@ def create_vietnamese_dub(
     ref_audio: str | None = None,
     tts_device: str | None = None,
     background_audio: Path | None = None,
+    music_audio: Path | None = None,
+    music_volume: float = 0.0,
 ) -> Path:
     """`background_audio` (the original minus its vocals, see pipeline/separate.py) replaces the video's own
-    track as the background bed when `background_volume > 0`."""
+    track as the background bed when `background_volume > 0`. `music_audio` is looped under the whole video
+    at `music_volume`."""
     if not blocks:
         raise DubbingError("No subtitle blocks available for dubbing.")
 
@@ -409,10 +412,10 @@ def create_vietnamese_dub(
             except OSError:
                 pass
 
-    if background_volume > 0:
-        _mux_mixed_audio(video_path, dub_audio, output_path, background_volume, voice_volume, background_audio)
-    else:
-        _mux_replace_audio(video_path, dub_audio, output_path, voice_volume)
+    _mux_dub_audio(
+        video_path, dub_audio, output_path, voice_volume, background_volume, background_audio,
+        music_audio if music_volume > 0 else None, music_volume,
+    )
     _phase("mux_sec")
     return output_path
 
@@ -505,42 +508,42 @@ def _render_audio_chunk(
     run_command(args)
 
 
-def _mux_replace_audio(video_path: Path, audio_path: Path, output_path: Path, voice_volume: float) -> None:
-    require_tool("ffmpeg")
-    voice_volume = max(0.1, min(3.0, voice_volume))
-    run_command(
-        [
-            "ffmpeg", "-y", "-i", str(video_path), "-i", str(audio_path),
-            "-map", "0:v:0", "-map", "1:a:0", "-map", "0:s?",
-            "-filter:a", f"volume={voice_volume:.3f},alimiter=limit=0.95",
-            "-c:v", "copy", "-c:s", "copy",
-            "-c:a", "aac", "-aac_coder", "fast",  # default twoloop coder: ~4x slower, no audible gain for speech
-            str(output_path),  # no -shortest: it also counts the sub stream and cuts the tail after the last cue
-        ]
-    )
-
-
-def _mux_mixed_audio(
+def _mux_dub_audio(
     video_path: Path,
     audio_path: Path,
     output_path: Path,
-    background_volume: float,
     voice_volume: float,
+    background_volume: float = 0.0,
     background_audio: Path | None = None,
+    music_audio: Path | None = None,
+    music_volume: float = 0.0,
 ) -> None:
     require_tool("ffmpeg")
-    bg_vol = max(0.0, min(1.0, background_volume))
     vc_vol = max(0.1, min(3.0, voice_volume))
-    bg_input = ["-i", str(background_audio)] if background_audio else []
-    filter_spec = (
-        f"[{2 if background_audio else 0}:a]volume={bg_vol:.3f}[bg];"
-        f"[1:a]volume={vc_vol:.3f}[vc];"
-        f"[bg][vc]amix=inputs=2:duration=first:dropout_transition=0,alimiter=limit=0.95[aout]"
-    )
+    inputs = ["-i", str(video_path), "-i", str(audio_path)]
+    if background_volume > 0:
+        bg_vol = max(0.0, min(1.0, background_volume))
+        if background_audio:
+            inputs += ["-i", str(background_audio)]
+        graph = (
+            f"[{2 if background_audio else 0}:a]volume={bg_vol:.3f}[bg];"
+            f"[1:a]volume={vc_vol:.3f}[vc];"
+            f"[bg][vc]amix=inputs=2:duration=first:dropout_transition=0"
+        )
+    else:
+        graph = f"[1:a]volume={vc_vol:.3f}"
+    if music_audio:
+        music_index = inputs.count("-i")
+        inputs += ["-stream_loop", "-1", "-i", str(music_audio)]  # loop a short track under the whole video
+        # normalize=0: adding music must not halve the voice level the sliders were tuned for
+        graph += (
+            f"[mix];[{music_index}:a]volume={max(0.0, min(1.0, music_volume)):.3f}[music];"
+            f"[mix][music]amix=inputs=2:duration=first:dropout_transition=0:normalize=0"
+        )
     run_command(
         [
-            "ffmpeg", "-y", "-i", str(video_path), "-i", str(audio_path), *bg_input,
-            "-filter_complex", filter_spec,
+            "ffmpeg", "-y", *inputs,
+            "-filter_complex", graph + ",alimiter=limit=0.95[aout]",
             "-map", "0:v:0", "-map", "[aout]", "-map", "0:s?",
             "-c:v", "copy", "-c:s", "copy",
             "-c:a", "aac", "-aac_coder", "fast",  # default twoloop coder: ~4x slower, no audible gain for speech

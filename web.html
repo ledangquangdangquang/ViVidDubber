@@ -15,6 +15,7 @@
     try { saved = localStorage.getItem('theme'); } catch (_) { /* storage blocked: fall back to OS */ }
     const light = saved ? saved === 'light' : matchMedia('(prefers-color-scheme: light)').matches;
     document.documentElement.dataset.theme = light ? 'light' : 'dark';
+    try { if (localStorage.getItem('palette') === 'catppuccin') document.documentElement.dataset.palette = 'catppuccin'; } catch (_) { /* default palette */ }
     let savedLang = null;
     try { savedLang = localStorage.getItem('lang'); } catch (_) { /* default below */ }
     document.documentElement.lang = savedLang === 'vi' ? 'vi' : 'en';  // UI language, English by default
@@ -104,6 +105,7 @@ a { color: var(--color-accent); }
 .lang-toggle button[aria-pressed="true"] { background: var(--color-paper-3); color: var(--color-accent); font-weight: 700; }
 .theme-toggle svg { width: 1.375rem; height: 1.375rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 :root[data-theme="dark"] .theme-toggle .moon, :root[data-theme="light"] .theme-toggle .sun { display: none; }
+#paletteToggle[aria-pressed="true"] { color: var(--color-accent); border-color: var(--color-accent); }
 .btn[data-state="loading"]::before { content: "⠋"; animation: spin-dots 800ms steps(1) infinite; }
 .ctl-btn {
   height: var(--control-h-sm);
@@ -156,6 +158,7 @@ a { color: var(--color-accent); }
 .queue-title { min-width: 0; }
 .q-name { display: block; font-weight: 700; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .q-meta { display: block; color: var(--color-muted); font-size: var(--text-sm); }
+.q-meta:empty { display: none; }
 .queue-actions { display: flex; align-items: center; gap: 0.5ch; }
 .status-chip { color: var(--color-muted); font-size: var(--text-sm); white-space: nowrap; }
 .status-chip::before { content: "["; } .status-chip::after { content: "]"; }
@@ -195,6 +198,43 @@ a { color: var(--color-accent); }
 }
 .preview .note { margin: var(--space-xs) 0 0; color: var(--color-muted); font-size: var(--text-sm); overflow-wrap: anywhere; }
 .preview .note::before { content: "# "; color: var(--color-rule-2); }
+.preview { scroll-margin-top: calc(var(--bar-h) + var(--space-sm)); }
+
+/* rows are clickable: a click pins that job in the preview + details pane */
+.queue-item { cursor: pointer; }
+.queue-item:hover { background: var(--color-paper-2); }
+.queue-item[data-selected="true"] { background: var(--color-paper-2); box-shadow: inset 2px 0 0 var(--color-accent); }
+.queue-item:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+
+/* ---- job details (under the preview) ---- */
+.details { display: grid; gap: var(--space-md); margin-block-start: var(--space-md); padding-block-start: var(--space-sm); border-block-start: var(--rule-hair) dashed var(--color-rule-2); }
+.details-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 2ch; align-items: start; }
+.details-head h3 { margin: 0; font-size: inherit; font-weight: 700; overflow-wrap: anywhere; }
+.details-head .btn { height: var(--control-h-sm); font-size: var(--text-sm); }
+.details-head .q-meta { grid-column: 1 / -1; }
+.details h4 { margin: 0 0 var(--space-2xs); color: var(--color-ink-2); font-size: var(--text-sm); font-weight: 700; }
+.details h4::before { content: "## "; color: var(--color-accent); }
+.ledger { margin: 0; padding: 0; list-style: none; font-size: var(--text-sm); }
+.ledger li { display: grid; grid-template-columns: 2ch minmax(0, 1fr) auto; gap: 0 1ch; }
+.ledger li::before { content: "·"; color: var(--color-rule-2); }
+.ledger [data-mark="done"]::before { content: "✓"; color: var(--color-accent); }
+.ledger [data-mark="now"] { font-weight: 700; }
+.ledger [data-mark="now"]::before { content: ">"; color: var(--color-accent); }
+.ledger :is([data-mark="paused"], [data-mark="review"])::before { content: "‖"; color: var(--color-warn); }
+.ledger [data-mark="failed"]::before { content: "×"; color: var(--color-error); }
+.ledger [data-mark="todo"] { color: var(--color-muted); }
+.ledger .val { text-align: end; font-variant-numeric: tabular-nums; color: var(--color-ink-2); }
+.ledger [data-mark="now"] .val { color: var(--color-accent); }
+.ledger :is([data-mark="paused"], [data-mark="review"]) .val { color: var(--color-warn); }
+.ledger [data-mark="failed"] .val { color: var(--color-error); }
+.ledger .total { margin-block-start: var(--space-2xs); padding-block-start: var(--space-2xs); border-block-start: var(--rule-hair) dashed var(--color-rule-2); font-weight: 700; }
+.ledger .total::before { content: ""; }
+.files { display: grid; font-size: var(--text-sm); }
+.files .file { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 2ch; }
+.files .file .note { margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0 2ch; margin: 0; font-size: var(--text-sm); }
+.kv dt { color: var(--color-muted); }
+.kv dd { margin: 0; overflow-wrap: anywhere; }
 
 /* ---- status line ---- */
 .statusline {
@@ -332,7 +372,7 @@ details.more[open] > summary { margin-block-end: var(--space-sm); }
 
 @media (min-width: 62rem) {
   .main { grid-template-columns: minmax(0, 1fr) minmax(22rem, 38%); }
-  .preview { position: sticky; top: calc(var(--bar-h) + var(--space-lg)); }
+  .preview { position: sticky; top: calc(var(--bar-h) + var(--space-lg)); max-height: calc(100svh - var(--bar-h) - 5rem); overflow-y: auto; scrollbar-width: thin; }
 }
 @media (max-width: 30rem) {
   .bar .btn kbd, .prompt .arg { display: none; }
@@ -365,6 +405,9 @@ details.more[open] > summary { margin-block-end: var(--space-sm); }
       <svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
       <svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
     </button>
+    <button type="button" class="btn theme-toggle" id="paletteToggle" aria-pressed="false" data-i18n-attr="aria-label:palette_toggle;title:palette_toggle">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10V3l4.5 3.5h7L20 3v7a8 8 0 0 1-16 0z"/><path d="M9 12v.5M15 12v.5M10.5 16h3"/></svg>
+    </button>
     <button type="button" class="btn btn-primary" id="openAddBtn" aria-haspopup="dialog"><span data-i18n="add_video">+ add video</span> <kbd>N</kbd></button>
   </div>
 </header>
@@ -389,6 +432,16 @@ details.more[open] > summary { margin-block-end: var(--space-sm); }
     <video id="videoPreview" controls preload="metadata"></video>
     <p class="note" id="previewHint"></p>
     <p class="note" id="queueStats" aria-live="polite" hidden></p>
+    <section class="details" id="jobDetails" aria-labelledby="detailName" hidden>
+      <div class="details-head">
+        <h3 id="detailName"></h3>
+        <button class="btn" type="button" id="detailClose" data-i18n="details_close" data-i18n-attr="title:details_close_title">× close</button>
+        <span class="q-meta" id="detailMeta"></span>
+      </div>
+      <div><h4 data-i18n="d_steps">steps</h4><ol class="ledger" id="detailSteps"></ol></div>
+      <div id="detailFilesBlock"><h4 data-i18n="d_files">files</h4><div class="files" id="detailFiles"></div></div>
+      <div><h4 data-i18n="d_settings">settings</h4><dl class="kv" id="detailSettings"></dl></div>
+    </section>
   </aside>
 </main>
 
@@ -556,6 +609,20 @@ details.more[open] > summary { margin-block-end: var(--space-sm); }
           <label class="check"><input id="separateVocals" name="separate_vocals" value="true" type="checkbox"><span class="box" aria-hidden="true"></span><span data-i18n="separate">remove the original voice, keep the music (Demucs)</span></label>
           <span class="field-help" data-i18n="separate_help">"Original audio" then sets the music level: 60–100% works well. First run downloads an ~80 MB model.</span>
         </div>
+        <div id="musicField" class="row">
+          <div class="field">
+            <label for="musicFile" data-i18n="music">add music</label>
+            <input id="musicFile" name="music_file" type="file" accept="audio/*">
+            <span class="field-help" data-i18n="music_help">Loops under the whole voice-over. Empty = no music.</span>
+          </div>
+          <div class="field">
+            <label for="musicVolume" data-i18n="music_volume">music level</label>
+            <div class="slider-row">
+              <input id="musicVolume" name="music_volume" type="range" min="0" max="100" value="15" step="1">
+              <output id="musicVolumeVal" for="musicVolume">15%</output>
+            </div>
+          </div>
+        </div>
         <div class="field">
           <label for="ttsProvider">engine</label>
           <select id="ttsProvider" name="tts_provider">
@@ -665,6 +732,7 @@ const I18N = {
   en: {
     lang_group: 'Interface language', theme_toggle: 'Toggle light/dark theme',
     theme_to_dark: 'Switch to dark theme', theme_to_light: 'Switch to light theme',
+    palette_toggle: 'Catppuccin colours (Mocha when dark, Latte when light)',
     add_video: '+ add video', queue: 'queue', download_all: '↓ download all .zip', retry_failed: '↻ retry failed ({n})', clear_done: '× clear done ({n})', confirm_clear_done: 'Delete {n} finished jobs and their output files?', job_list: 'Job list',
     empty_a: 'Queue is empty. Press ', empty_b: ' or ',
     loading_config: 'Reading server config…', config_failed: 'Server config not available.', no_job: 'No jobs yet.',
@@ -703,6 +771,7 @@ const I18N = {
     devices: 'devices (CPU / GPU)', translate_device: 'translation (offline)', separate_device: 'vocal removal (Demucs)',
     separate: 'remove the original voice, keep the music (Demucs)',
     separate_help: '"Original audio" then sets the music level: 60–100% works well. First run downloads an ~80 MB model.',
+    music: 'add music', music_help: 'Loops under the whole voice-over. Empty = no music.', music_volume: 'music level',
     submit: 'add to queue', adding_links: 'Adding links…', uploading: 'Uploading…',
     not_analyzed: 'Link not analyzed yet. Press "analyze", then pick videos.', none_selected: 'No video selected.',
     vid_done: '[dubbed]', vid_queued: '[in queue]',
@@ -741,10 +810,24 @@ const I18N = {
     g_m: 'Male', g_f: 'Female', r_n: 'North', r_c: 'Central', r_s: 'South',
     s_news: 'News', s_natural: 'Natural', s_story: 'Storytelling', s_audiobook: 'Audiobook', s_narration: 'Narration',
     s_warm: 'Warm, deep', s_expressive: 'Expressive',
+    d_steps: 'steps', d_files: 'files', d_settings: 'settings', d_total: 'total',
+    details_close: '× close', details_close_title: 'Unpin this job: the preview follows the running job again',
+    sel_hint: 'Pinned: {name}. × close follows the running job again.',
+    sel_no_video: '{name}: no video file yet; it shows once the download or upload finishes.',
+    m_now: 'running {p}%', m_review: 'your turn', m_paused: 'paused', m_failed: 'failed',
+    f_burned: 'dubbed, subtitles burned in', f_burned_orig: 'original audio, subtitles burned in', f_dub: 'dubbed, soft subtitles',
+    f_soft: 'original audio, soft subtitles', f_vi_srt: 'Vietnamese subtitles', f_orig_srt: 'subtitles in the spoken language',
+    f_audio: 'extracted audio', f_input: 'source video',
+    k_mode: 'job', k_source: 'source', k_cut: 'cut', k_lang: 'spoken language', k_whisper: 'whisper', k_translate: 'translate',
+    k_voice: 'voice', k_mix: 'audio mix', k_music: 'music', k_picture: 'picture',
+    v_off: 'off', v_whole: 'whole video', v_mix: 'voice {v}% · original {b}%', v_vocals_removed: 'original voice removed',
+    v_font: 'subtitles {n}px', v_flip: 'mirrored', v_blur: 'bottom {n}% blurred', v_credit: 'credit “{name}”', v_credit_auto: 'credit: channel name',
+    v_clone: 'cloned voice “{name}”', src_file: 'uploaded file', src_youtube: 'YouTube',
   },
   vi: {
     lang_group: 'Ngôn ngữ giao diện', theme_toggle: 'Chuyển giao diện sáng/tối',
     theme_to_dark: 'Chuyển sang giao diện tối', theme_to_light: 'Chuyển sang giao diện sáng',
+    palette_toggle: 'Màu Catppuccin (tối: Mocha, sáng: Latte)',
     add_video: '+ thêm video', queue: 'hàng đợi', download_all: '↓ tải tất cả .zip', retry_failed: '↻ chạy lại job lỗi ({n})', clear_done: '× xoá job đã xong ({n})', confirm_clear_done: 'Xoá {n} job đã xong cùng các file đầu ra?', job_list: 'Danh sách job',
     empty_a: 'Hàng đợi trống. Bấm ', empty_b: ' hoặc nhấn ',
     loading_config: 'Đang đọc cấu hình server…', config_failed: 'Server config chưa sẵn sàng.', no_job: 'Chưa có job.',
@@ -783,6 +866,7 @@ const I18N = {
     devices: 'thiết bị chạy (CPU / GPU)', translate_device: 'dịch (offline)', separate_device: 'tách giọng (Demucs)',
     separate: 'bỏ giọng gốc, giữ nhạc nền (Demucs)',
     separate_help: 'Khi bật, thanh "audio gốc" chỉnh mức nhạc nền: nên đặt 60–100%. Lần đầu tải model ~80 MB.',
+    music: 'chèn nhạc nền', music_help: 'Lặp lại suốt video, nằm dưới giọng Việt. Để trống = không chèn.', music_volume: 'mức nhạc',
     submit: 'thêm vào hàng đợi', adding_links: 'Đang thêm link…', uploading: 'Đang upload…',
     not_analyzed: 'Chưa phân tích link. Bấm "phân tích" rồi chọn video.', none_selected: 'Chưa chọn video nào.',
     vid_done: '[đã dịch]', vid_queued: '[đang chờ]',
@@ -821,6 +905,19 @@ const I18N = {
     g_m: 'Nam', g_f: 'Nữ', r_n: 'Bắc', r_c: 'Trung', r_s: 'Nam',
     s_news: 'Tin tức', s_natural: 'Tự nhiên', s_story: 'Kể chuyện', s_audiobook: 'Đọc truyện', s_narration: 'Giọng đọc',
     s_warm: 'Trầm ấm', s_expressive: 'Truyền cảm',
+    d_steps: 'các bước', d_files: 'file', d_settings: 'cấu hình', d_total: 'tổng',
+    details_close: '× đóng', details_close_title: 'Bỏ ghim job này: preview lại theo job đang chạy',
+    sel_hint: 'Đang ghim: {name}. × đóng để theo job đang chạy.',
+    sel_no_video: '{name}: chưa có file video; sẽ hiện khi tải hoặc upload xong.',
+    m_now: 'đang chạy {p}%', m_review: 'chờ bạn', m_paused: 'tạm dừng', m_failed: 'lỗi',
+    f_burned: 'đã lồng tiếng, phụ đề in vào hình', f_burned_orig: 'audio gốc, phụ đề in vào hình', f_dub: 'đã lồng tiếng, phụ đề dạng track',
+    f_soft: 'audio gốc, phụ đề dạng track', f_vi_srt: 'phụ đề tiếng Việt', f_orig_srt: 'phụ đề ngôn ngữ gốc',
+    f_audio: 'audio đã tách', f_input: 'video gốc',
+    k_mode: 'loại job', k_source: 'nguồn', k_cut: 'đoạn cắt', k_lang: 'ngôn ngữ nói', k_whisper: 'whisper', k_translate: 'dịch',
+    k_voice: 'giọng đọc', k_mix: 'âm thanh', k_music: 'nhạc nền', k_picture: 'hình',
+    v_off: 'tắt', v_whole: 'cả video', v_mix: 'giọng {v}% · audio gốc {b}%', v_vocals_removed: 'đã bỏ giọng gốc',
+    v_font: 'phụ đề {n}px', v_flip: 'lật ngang', v_blur: 'làm mờ {n}% đáy', v_credit: 'cre “{name}”', v_credit_auto: 'cre: tên kênh',
+    v_clone: 'giọng clone “{name}”', src_file: 'file upload', src_youtube: 'YouTube',
   },
 };
 let lang = document.documentElement.lang === 'vi' ? 'vi' : 'en';  // set before paint by the <head> script
@@ -908,6 +1005,9 @@ const bgVolume = document.getElementById('bgVolume');
 const bgVolumeVal = document.getElementById('bgVolumeVal');
 const voiceVolume = document.getElementById('voiceVolume');
 const voiceVolumeVal = document.getElementById('voiceVolumeVal');
+const musicField = document.getElementById('musicField');
+const musicVolume = document.getElementById('musicVolume');
+const musicVolumeVal = document.getElementById('musicVolumeVal');
 const subtitleFontSize = document.getElementById('subtitleFontSize');
 const subtitleFontSizeVal = document.getElementById('subtitleFontSizeVal');
 const coverBottom = document.getElementById('coverBottom');
@@ -939,6 +1039,7 @@ let finishedWhileHidden = 0;
 let objectUrl = null;
 let uploading = false;
 let activePreviewJobId = null;
+let selectedJobId = null;  // a clicked row pins that job in the preview; null = follow the running job
 let serverConfig = null;
 let resolvedVideos = [];
 let lastJobs = [];
@@ -1018,13 +1119,13 @@ function jobSteps(opts = {}) {
       (key !== 'st_download' || opts.video_url) && (key !== 'st_cut' || trim) && (key !== 'st_separate' || separate) &&
       key !== 'st_audio' && key !== 'st_asr' && key !== 'st_translate' &&
       (key !== 'st_dub' || opts.dub !== 'false') &&
-      (key !== 'st_burn' || opts.export_mode === 'burn'));
+      (key !== 'st_burn' || opts.export_mode === 'burn') && key !== 'st_transform');
   }
   const trim = opts.trim_start || opts.trim_end;
   return STEP_KEYS.map(([, key]) => key).filter(key =>
     (key !== 'st_download' || opts.video_url) && (key !== 'st_cut' || trim) && (key !== 'st_separate' || separate) &&
     (key !== 'st_translate' || opts.translate !== 'false') && (key !== 'st_dub' || opts.dub !== 'false') &&
-    (key !== 'st_burn' || opts.export_mode === 'burn'));
+    (key !== 'st_burn' || opts.export_mode === 'burn') && key !== 'st_transform');
 }
 function stepText(job) {
   const key = stepKey(job.step);
@@ -1063,6 +1164,14 @@ themeToggle.addEventListener('click', () => {
   document.documentElement.dataset.theme = next;
   try { localStorage.setItem('theme', next); } catch (_) { /* not persisted: fine */ }
   syncThemeToggle();
+});
+const paletteToggle = document.getElementById('paletteToggle');
+paletteToggle.setAttribute('aria-pressed', String(document.documentElement.dataset.palette === 'catppuccin'));
+paletteToggle.addEventListener('click', () => {
+  const on = document.documentElement.dataset.palette !== 'catppuccin';
+  if (on) document.documentElement.dataset.palette = 'catppuccin'; else delete document.documentElement.dataset.palette;
+  paletteToggle.setAttribute('aria-pressed', String(on));
+  try { localStorage.setItem('palette', on ? 'catppuccin' : ''); } catch (_) { /* not persisted: fine */ }
 });
 
 // ---------------------------------------------------------------- add-video sheet
@@ -1236,7 +1345,7 @@ whisperDevice.addEventListener('change', () => {
 });
 
 const separateField = document.getElementById('separateField');
-function updateVolumeVisibility() { volumeControls.hidden = separateField.hidden = !dubToggle.checked; }
+function updateVolumeVisibility() { volumeControls.hidden = separateField.hidden = musicField.hidden = !dubToggle.checked; }
 
 // Transform mode: flip / blur / credit / cut only — hide the full-pipeline sections.
 const jobModeRadios = form.querySelectorAll('input[name="job_mode"]');
@@ -1282,13 +1391,14 @@ subtitleFontSize.addEventListener('input', () => { subtitleFontSizeVal.textConte
 coverBottom.addEventListener('input', () => { coverBottomVal.textContent = coverBottom.value === '0' ? t('off') : `${coverBottom.value}%`; });
 bgVolume.addEventListener('input', () => { bgVolumeVal.textContent = `${bgVolume.value}%`; });
 voiceVolume.addEventListener('input', () => { voiceVolumeVal.textContent = `${voiceVolume.value}%`; });
+musicVolume.addEventListener('input', () => { musicVolumeVal.textContent = `${musicVolume.value}%`; });
 
 // ---------------------------------------------------------------- presets
 // shortcut: presets live in this browser's localStorage; move them to the server if they must follow you to other browsers.
 // Order matters: source_lang before translation_provider, tts_provider before tts_voice (their change handlers reset the next one).
 const PRESET_FIELDS = ['job_mode', 'source_lang', 'whisper_model', 'translation_provider', 'translateToggle',
   'subtitle_font_size', 'coverBottom', 'flip', 'show_source', 'dubToggle', 'background_volume', 'voice_volume',
-  'review_srt', 'separate_vocals', 'tts_provider', 'tts_voice', 'clone_voice_name', 'whisper_device', 'translate_device',
+  'review_srt', 'separate_vocals', 'music_volume', 'tts_provider', 'tts_voice', 'clone_voice_name', 'whisper_device', 'translate_device',
   'separate_device', 'tts_device'];
 const presetSelect = document.getElementById('presetSelect');
 const presetName = document.getElementById('presetName');
@@ -1356,7 +1466,11 @@ function restorePreset() {
 }
 
 // ---------------------------------------------------------------- voice clone + preview
-document.getElementById('clearCloneRefBtn').addEventListener('click', () => { cloneRefAudio.value = ''; });
+// A clone sample (saved or uploaded) replaces the preset voice, so grey the voice select out meanwhile.
+function syncCloneUi() { ttsVoice.disabled = !!(savedCloneVoice.value || cloneRefAudio.files.length); }
+savedCloneVoice.addEventListener('change', syncCloneUi);
+cloneRefAudio.addEventListener('change', syncCloneUi);
+document.getElementById('clearCloneRefBtn').addEventListener('click', () => { cloneRefAudio.value = ''; syncCloneUi(); });
 
 async function refreshClonedVoices(selectName) {
   try {
@@ -1367,6 +1481,7 @@ async function refreshClonedVoices(selectName) {
     none.dataset.i18n = 'none_opt';
     savedCloneVoice.replaceChildren(none, ...data.voices.map(n => new Option(n, n)));
     if (selectName) savedCloneVoice.value = selectName;
+    syncCloneUi();
   } catch (_err) { /* ignore, list just stays as-is */ }
 }
 
@@ -1454,6 +1569,7 @@ form.addEventListener('submit', async event => {
     fd.set('tts_voice', ttsVoice.value);
     fd.set('background_volume', String(Number(bgVolume.value) / 100));
     fd.set('voice_volume', String(Number(voiceVolume.value) / 100));
+    fd.set('music_volume', String(Number(musicVolume.value) / 100));
     fd.set('cover_bottom', String(Number(coverBottom.value) / 100));
     return fd;
   };
@@ -1539,6 +1655,11 @@ function createRow(jobId) {
   const article = document.createElement('article');
   article.className = 'queue-item';
   article.dataset.jobId = jobId;
+  article.tabIndex = 0;
+  article.addEventListener('click', event => { if (!event.target.closest('a, button')) selectJob(jobId); });
+  article.addEventListener('keydown', event => {
+    if (event.target === article && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); selectJob(jobId); }
+  });
 
   const head = document.createElement('header');
   head.className = 'queue-head';
@@ -1610,10 +1731,11 @@ function updateRow(article, job) {
   const name = job.options?.original_stem || job.id;
   ui.name.textContent = name;
   ui.name.title = name;
-  ui.meta.textContent = `${job.id} · ${humanTime(job.total_elapsed)}`;
+  ui.meta.textContent = job.status === 'done' ? '' : humanTime(job.total_elapsed);  // done: the chip already shows it; the id lives in the details pane
 
   const state = job.status === 'running' ? 'running' : job.status === 'done' ? 'done' : job.status === 'error' ? 'error' : job.status === 'paused' ? 'paused' : 'queued';
   article.dataset.state = state;
+  article.dataset.selected = String(job.id === selectedJobId);
   ui.chip.dataset.state = state;
   ui.chip.textContent = {
     running: t('chip_running', { p: job.progress }),
@@ -1645,17 +1767,19 @@ function updateRow(article, job) {
   ui.warn.textContent = (job.translation_warnings || []).map(w => t('warning', { w })).join('\n');
 
   ui.outputs.innerHTML = '';
-  const entries = Object.entries(job.downloads || {}).sort(([a], [b]) => downloadOrder.indexOf(a) - downloadOrder.indexOf(b));
-  entries.forEach(([kind, url]) => {
+  // Only the finished video here; every other file is listed in the details pane.
+  const kind = ['output_burned_video', 'output_dubbed_video', 'output_video'].find(key => job.downloads?.[key]);
+  if (kind) {
+    const url = job.downloads[kind];
     const link = document.createElement('a');
     link.className = 'download';
     link.href = url;
     link.textContent = kind === 'output_burned_video' && !job.downloads.output_dubbed_video
       ? t('dl_burned_orig')
       : downloadLabels[kind] || kind;
-    if (kind === 'output_burned_video') link.dataset.primary = 'true';
+    link.dataset.primary = 'true';
     ui.outputs.appendChild(link);
-  });
+  }
 }
 
 function renderQueue(jobs) {
@@ -1731,8 +1855,31 @@ function renderQueue(jobs) {
   updatePreview(jobs);
 }
 
+function selectJob(jobId) {
+  selectedJobId = selectedJobId === jobId ? null : jobId;  // a second click unpins
+  activePreviewJobId = null;  // so the running job takes the preview back on unpin
+  if (!selectedJobId) setPreviewHint('preview_idle');
+  rowCache.forEach((article, id) => { article.dataset.selected = String(id === selectedJobId); });
+  updatePreview(lastJobs);
+  if (selectedJobId && !matchMedia('(min-width: 62rem)').matches) document.querySelector('.preview').scrollIntoView({ behavior: 'smooth' });
+}
+document.getElementById('detailClose').addEventListener('click', () => { if (selectedJobId) selectJob(selectedJobId); });
+
 function updatePreview(jobs) {
   const running = jobs.find(job => job.status === 'running');
+  if (selectedJobId && !jobs.some(job => job.id === selectedJobId)) { selectedJobId = null; setPreviewHint('preview_idle'); }  // deleted
+  const selected = jobs.find(job => job.id === selectedJobId);
+  renderDetails(selected || running);
+  videoPreview.hidden = false;
+  if (selected) {
+    const d = selected.downloads || {};
+    const url = d.output_burned_video || d.output_dubbed_video || d.output_video || d.input;
+    videoPreview.hidden = !url;
+    if (!url) videoPreview.removeAttribute('src');
+    else if (videoPreview.getAttribute('src') !== url) videoPreview.src = url;
+    setPreviewHint(url ? 'sel_hint' : 'sel_no_video', { name: selected.options?.original_stem || selected.id });
+    return;
+  }
   if (running) {
     if (activePreviewJobId !== running.id) {
       activePreviewJobId = running.id;
@@ -1755,6 +1902,107 @@ function updatePreview(jobs) {
       }
     }
   }
+}
+
+// One entry per step of the job: done (has a timing), now / paused / review, failed, or todo.
+function stepStates(job) {
+  const review = job.status === 'paused' && job.options?.review_pending === 'true';
+  const timings = {};
+  Object.entries(job.step_timings || {}).forEach(([step, sec]) => {
+    const key = stepKey(step);
+    if (key) timings[key] = (timings[key] || 0) + sec;
+  });
+  const steps = jobSteps(job.options);
+  const firstOpen = steps.find(key => !(key in timings));
+  const current = steps.includes(stepKey(job.step)) ? stepKey(job.step) : firstOpen;
+  return steps.map(key => {
+    let mark = key in timings || job.status === 'done' ? 'done' : 'todo';
+    if (key === current && job.status === 'running') mark = 'now';
+    if (key === current && job.status === 'paused') mark = review ? 'review' : 'paused';
+    if (key === firstOpen && job.status === 'error') mark = 'failed';
+    return { key, mark, sec: timings[key] };
+  });
+}
+
+function detailEl(tag, cls, text) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text != null) node.textContent = text;
+  return node;
+}
+
+const jobDetails = document.getElementById('jobDetails');
+function renderDetails(job) {
+  jobDetails.hidden = !job;
+  if (!job) return;
+  const o = job.options || {};
+  const d = job.downloads || {};
+  document.getElementById('detailName').textContent = o.original_stem || job.id;
+  document.getElementById('detailClose').hidden = job.id !== selectedJobId;
+  document.getElementById('detailMeta').textContent = [job.id, o.video_url ? [t('src_youtube'), o.source_channel].filter(Boolean).join(' · ') : t('src_file')].join(' · ');
+
+  const rows = stepStates(job).map(step => {
+    const li = detailEl('li');
+    li.dataset.mark = step.mark;
+    const value = {
+      done: step.sec == null ? '—' : humanTime(Math.round(step.sec)), now: t('m_now', { p: job.progress || 0 }),
+      review: t('m_review'), paused: t('m_paused'), failed: t('m_failed'), todo: '—',
+    }[step.mark];
+    li.append(detailEl('span', null, t(step.key)), detailEl('span', 'val', value));
+    return li;
+  });
+  const total = detailEl('li', 'total');
+  total.append(detailEl('span', null, t('d_total')), detailEl('span', 'val', humanTime(Math.round(job.total_elapsed || 0))));
+  document.getElementById('detailSteps').replaceChildren(...rows, total);
+
+  const fileDesc = {
+    output_burned_video: d.output_dubbed_video ? 'f_burned' : 'f_burned_orig', output_dubbed_video: 'f_dub', output_video: 'f_soft',
+    vi_srt: 'f_vi_srt', original_srt: 'f_orig_srt', audio: 'f_audio', input: 'f_input',
+  };
+  const files = downloadOrder.filter(key => d[key]);
+  document.getElementById('detailFilesBlock').hidden = !files.length;
+  document.getElementById('detailFiles').replaceChildren(...files.map((key, i) => {
+    const row = detailEl('div', 'file');
+    const a = detailEl('a', 'download', downloadLabels[key]);
+    a.href = d[key];
+    a.setAttribute('download', '');
+    if (i === 0 && key.startsWith('output')) a.dataset.primary = 'true';
+    row.append(a, detailEl('p', 'note', t(fileDesc[key])));
+    return row;
+  }));
+
+  // the job's own settings, read back from its options
+  const pct = v => Math.round(Number(v) * 100);
+  const mode = o.job_mode || 'full';
+  const kv = [['k_mode', t(`mode_${mode}`)]];
+  kv.push(['k_cut', o.trim_start || o.trim_end ? `${o.trim_start || '0:00'} → ${o.trim_end || t('trim_end_ph')}` : t('v_whole')]);
+  if (mode === 'full') {
+    kv.push(['k_lang', t(`lang_${o.source_lang || 'en'}`)]);
+    kv.push(['k_whisper', `${o.whisper_model || 'small'} · ${o.whisper_device_used || o.whisper_device || 'cpu'}`]);
+    const providers = { google: 'Google', huggingface: 'Hy-MT2-1.8B', envit5: 'EnViT5' };
+    kv.push(['k_translate', o.translate === 'false' ? t('v_off') : providers[o.translation_provider] || o.translation_provider || '—']);
+  }
+  if (mode !== 'transform') {
+    if (o.dub === 'false') kv.push(['k_voice', t('v_off')]);
+    else {
+      const engine = o.tts_provider === 'vieneu' ? 'VieNeu-TTS' : 'Edge-TTS';
+      const voice = (VOICES[o.tts_provider] || []).find(v => v[0] === o.tts_voice)?.[1] || o.tts_voice || '—';
+      // tts_ref_audio is what the dub really uses; tts_voice is ignored when it is set
+      const clone = o.tts_ref_audio && (o.clone_voice_name || o.tts_ref_audio.split(/[\\/]/).pop().replace(/\.wav$/i, ''));
+      kv.push(['k_voice', `${engine} · ${clone ? t('v_clone', { name: clone }) : voice}`]);
+      const mix = [t('v_mix', { v: pct(o.voice_volume ?? 1), b: pct(o.background_volume ?? 0) })];
+      if (o.separate_vocals === 'true') mix.push(t('v_vocals_removed'));
+      kv.push(['k_mix', mix.join(' · ')]);
+      if (o.music_audio) kv.push(['k_music', `${pct(o.music_volume ?? 0)}%`]);
+    }
+  }
+  const pic = [];
+  if (mode !== 'transform' && o.subtitle_font_size) pic.push(t('v_font', { n: o.subtitle_font_size }));
+  if (o.flip === 'true') pic.push(t('v_flip'));
+  if (Number(o.cover_bottom) > 0) pic.push(t('v_blur', { n: pct(o.cover_bottom) }));
+  if (o.show_source === 'true') pic.push(o.source_credit ? t('v_credit', { name: o.source_credit }) : t('v_credit_auto'));
+  kv.push(['k_picture', pic.join(' · ') || '—']);
+  document.getElementById('detailSettings').replaceChildren(...kv.flatMap(([k, v]) => [detailEl('dt', null, t(k)), detailEl('dd', null, v)]));
 }
 
 function finishWithError(error) {

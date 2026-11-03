@@ -76,3 +76,44 @@
   --color-focus: oklch(40% 0.13 150);
   --color-backdrop: oklch(20% 0.01 150 / 0.35);
 }
+
+/* Catppuccin (toggle next to light/dark, data-palette on <html>): Mocha when dark, Latte when light.
+ * Accent = mauve; warn/error/info = yellow/red/sky. Latte's yellow is too pale for text, so warn uses a darker step of it. */
+:root[data-palette="catppuccin"] {
+  --color-paper: #1e1e2e;        /* base */
+  --color-paper-2: #181825;      /* mantle */
+  --color-paper-3: #313244;      /* surface0 */
+  --color-ink: #cdd6f4;          /* text */
+  --color-ink-2: #bac2de;        /* subtext1 */
+  --color-muted: #a6adc8;        /* subtext0 */
+  --color-rule: #313244;         /* surface0 */
+  --color-rule-2: #585b70;       /* surface2 */
+  --color-accent: #cba6f7;       /* mauve */
+  --color-accent-ink: #1e1e2e;
+  --color-accent-soft: #45475a;  /* surface1 */
+  --color-warn: #f9e2af;         /* yellow */
+  --color-error: #f38ba8;        /* red */
+  --color-info: #89dceb;         /* sky */
+  --color-focus: #b4befe;        /* lavender */
+  --color-video: #11111b;        /* crust */
+  --color-backdrop: rgb(17 17 27 / 0.6);
+}
+:root[data-palette="catppuccin"][data-theme="light"] {
+  --color-paper: #eff1f5;
+  --color-paper-2: #e6e9ef;
+  --color-paper-3: #dce0e8;
+  --color-ink: #4c4f69;
+  --color-ink-2: #5c5f77;
+  --color-muted: #6c6f85;
+  --color-rule: #ccd0da;
+  --color-rule-2: #9ca0b0;
+  --color-accent: #8839ef;
+  --color-accent-ink: #eff1f5;
+  --color-accent-soft: #dcd0fa;
+  --color-warn: #a86a12;
+  --color-error: #d20f39;
+  --color-info: #1e66f5;
+  --color-focus: #7287fd;
+  --color-video: #11111b;
+  --color-backdrop: rgb(76 79 105 / 0.35);
+}

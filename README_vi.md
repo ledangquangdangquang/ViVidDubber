@@ -26,9 +26,10 @@ video -> (cắt, tuỳ chọn) -> audio -> phụ đề (Whisper) -> dịch sang 
 
 - **Nhận diện giọng nói**: Faster-Whisper chạy GPU (tự quay về CPU), ngôn ngữ nguồn Anh, Trung hoặc Nhật.
 - **Dịch**: HuggingFace Hy-MT2-1.8B (offline, 4-bit, mặc định), Google Translate (online, miễn phí) hoặc EnViT5 (offline, chỉ từ tiếng Anh).
-- **Lồng tiếng**: VieNeu-TTS (offline, 23 giọng Việt, clone giọng, mặc định) hoặc Edge-TTS (online, 2 giọng). Mỗi câu tự khớp với thời gian phụ đề.
+- **Lồng tiếng**: VieNeu-TTS v3 Turbo (offline, 23 giọng Việt, clone giọng, mặc định) hoặc Edge-TTS (online, 2 giọng). Mỗi câu tự khớp với thời gian phụ đề.
 - **Sửa bản dịch**: tick *dừng sau khi dịch* thì job chờ sau bước dịch; `[sửa phụ đề]` mở từng dòng cạnh câu gốc, lưu là chạy tiếp sang lồng tiếng. Dùng được cả với job đã xong: chỉ những dòng sửa mới được đọc lại.
 - **Giữ nhạc nền**: tuỳ chọn tách giọng (Demucs `htdemucs`, model ~80 MB, chạy được trên GPU 4 GB) bỏ giọng gốc, giữ nhạc/hiệu ứng dưới giọng Việt.
+- **Chèn nhạc nền**: tải lên file nhạc riêng (mp3, wav, m4a…), lặp lại suốt video dưới giọng Việt với mức âm lượng riêng.
 - **Video**: burn phụ đề Việt (dùng NVENC nếu có), MP4 phụ đề mềm, cắt đoạn (thời điểm bắt đầu/kết thúc), lật ngang, làm mờ dải đáy để che phụ đề có sẵn của video gốc, ghi "Cre: <tên kênh>" lên video.
 - **Chỉ phụ đề**: bỏ tick lồng tiếng để có video burn phụ đề Việt, giữ nguyên audio gốc.
 - **Hàng đợi**: nhiều file hoặc cả playlist YouTube, chạy lần lượt; tạm dừng / tiếp tục / huỷ; tải tất cả kết quả thành file zip.
@@ -201,6 +202,7 @@ Biến môi trường là giá trị mặc định cho các lệnh gọi API kh�
 
 | | VieNeu-TTS (mặc định) | Edge-TTS |
 |---|---|---|
+| **Model** | [`pnnbao-ump/VieNeu-TTS-v3-Turbo`](https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo) (PyTorch trên GPU, ONNX trên CPU) | Giọng neural của Microsoft |
 | **Chạy** | **Offline** (GPU hoặc CPU) | Online (Microsoft) |
 | **Giọng** | **23** (Bắc / Trung / Nam) | 2 (Hoài My, Nam Minh) |
 | **Audio** | **48 kHz** | 44.1 kHz |
@@ -228,7 +230,7 @@ Mức trộn mặc định: audio gốc 10%, giọng Việt 200%; đặt audio g
 - `GET|POST /api/clone-voices`, `DELETE /api/clone-voices/{name}`: giọng clone đã lưu
 - `POST /api/preview-voice`: đoạn giọng nghe thử
 
-Các trường chính của `POST /api/jobs`: `source_lang` (`en`/`zh`/`ja`), `whisper_model`, `whisper_device`, `translation_provider` (`huggingface`/`google`/`envit5`), `translate_device`, `translate`, `dub`, `tts_provider` (`vieneu`/`edge`), `tts_voice`, `tts_device`, `background_volume` (0–1), `voice_volume`, `separate_vocals` / `separate_device`, `review_srt`, `subtitle_font_size`, `trim_start`, `trim_end`, `flip`, `cover_bottom` (0–0.4), `show_source`, `source_credit`, `clone_ref_audio` / `clone_voice_name`.
+Các trường chính của `POST /api/jobs`: `source_lang` (`en`/`zh`/`ja`), `whisper_model`, `whisper_device`, `translation_provider` (`huggingface`/`google`/`envit5`), `translate_device`, `translate`, `dub`, `tts_provider` (`vieneu`/`edge`), `tts_voice`, `tts_device`, `background_volume` (0–1), `voice_volume`, `separate_vocals` / `separate_device`, `music_file` / `music_volume` (0–1), `review_srt`, `subtitle_font_size`, `trim_start`, `trim_end`, `flip`, `cover_bottom` (0–0.4), `show_source`, `source_credit`, `clone_ref_audio` / `clone_voice_name`.
 
 ## Câu hỏi thường gặp
 

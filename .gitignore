@@ -20,3 +20,6 @@ __editable__*
 
 # browser cookies for yt-dlp: secrets
 cookies*.txt
+
+# taste-skill screenshots (direction.json is kept)
+.taste-skill/inspect/
