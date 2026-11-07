@@ -497,7 +497,8 @@ def _render_audio_chunk(
     filter_parts.append(
         "".join(labels)
         + f"amix=inputs={len(clips)}:duration=longest:dropout_transition=0:normalize=0,"
-        + f"apad,atrim=0:{chunk_duration:.6f},alimiter=limit=0.95[dub]"
+        # whole_dur, not apad,atrim: on ffmpeg 9 an endless apad never ends after atrim (job hung 1800 s)
+        + f"apad=whole_dur={chunk_duration:.6f},alimiter=limit=0.95[dub]"
     )
     args.extend(
         [
