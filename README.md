@@ -189,7 +189,7 @@ Offline `VietAI/envit5-translation`, English → Vietnamese only.
 
 ## Whisper (speech recognition)
 
-The UI sends the model (`medium` by default) and device (`GPU` by default, compute type `int8_float16`, ~1.2 GB VRAM). On a CUDA out-of-memory error the server first unloads the translator and retries on GPU, then falls back to CPU `int8`.
+The UI sends the model (`large-v3-turbo` by default: ~40% faster than `medium` at the same ~1.2 GB VRAM, and catches a few words `medium` drops) and device (`GPU` by default, compute type `int8_float16`, ~1.2 GB VRAM). On a CUDA out-of-memory error the server first unloads the translator and retries on GPU, then falls back to CPU `int8`.
 
 Environment variables are the defaults for API calls that don't send these fields:
 

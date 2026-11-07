@@ -187,7 +187,7 @@ Model offline `VietAI/envit5-translation`, chỉ dịch Anh → Việt.
 
 ## Whisper (nhận diện giọng nói)
 
-Giao diện gửi model (mặc định `medium`) và thiết bị (mặc định `GPU`, kiểu tính `int8_float16`, ~1.2 GB VRAM). Khi GPU hết bộ nhớ, server gỡ model dịch ra rồi thử lại trên GPU, nếu vẫn lỗi thì chuyển sang CPU `int8`.
+Giao diện gửi model (mặc định `large-v3-turbo`: nhanh hơn `medium` ~40%, cùng ~1.2 GB VRAM, bắt được vài từ `medium` bỏ sót) và thiết bị (mặc định `GPU`, kiểu tính `int8_float16`, ~1.2 GB VRAM). Khi GPU hết bộ nhớ, server gỡ model dịch ra rồi thử lại trên GPU, nếu vẫn lỗi thì chuyển sang CPU `int8`.
 
 Biến môi trường là giá trị mặc định cho các lệnh gọi API không gửi những trường này:
 

@@ -505,7 +505,7 @@ async def create_job(
     video_url: str = Form(""),
     target_lang: str = Form("vi"),
     source_lang: str = Form("en"),
-    whisper_model: str = Form("medium"),
+    whisper_model: str = Form("large-v3-turbo"),
     whisper_device: str = Form("cuda"),
     whisper_compute_type: str = Form(""),
     export_mode: str = Form("burn"),
@@ -929,10 +929,9 @@ def _run_job(job_id: str) -> None:
     audio_path = job_dir / "audio.wav"
     original_srt = job_dir / "original.srt"
     vi_srt = job_dir / "vi.srt"
-    input_stem = input_path.stem
-    output_video = job_dir / f"{input_stem}_vi_soft.mp4"
-    output_dubbed_video = job_dir / f"{input_stem}_vi_dub.mp4"
-    output_burned_video = job_dir / f"{input_stem}_vi_burned.mp4"
+    output_video = job_dir / "output_vi_soft.mp4"
+    output_dubbed_video = job_dir / "output_vi_dub.mp4"
+    output_burned_video = job_dir / "output_vi_burned.mp4"
     burned_video_only = job_dir / "burned_video_only.mp4"
 
     try:
