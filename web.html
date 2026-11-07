@@ -184,6 +184,8 @@ a { color: var(--color-accent); }
 .download::before { content: "↓ "; color: var(--color-muted); }
 .download:hover { color: var(--color-accent); text-decoration: underline; text-underline-offset: 3px; }
 .download[data-primary="true"] { order: -1; color: var(--color-accent); font-weight: 700; }
+.export { order: -1; font: inherit; color: var(--color-ink-2); background: none; border: 0; padding: 0; cursor: pointer; }
+.export:hover { color: var(--color-accent); text-decoration: underline; text-underline-offset: 3px; }
 
 .empty { margin: 0; padding: var(--space-lg) 0; color: var(--color-muted); }
 .empty kbd { color: var(--color-accent); font: inherit; }
@@ -786,7 +788,7 @@ const I18N = {
     srt_help_redo: 'Saving renders the video again. Only edited lines are voiced again; the rest come from the cache.',
     ctl_cancel: '[cancel]', ctl_cancel_title: 'Cancel job', ctl_remove_title: 'Delete job and its files', confirm_remove: 'Delete job "{name}" and its output files?',
     chip_running: 'running {p}%', chip_queued: 'queued #{n}', chip_paused: 'paused', chip_done: 'done {t}', chip_error: 'error',
-    warning: 'Warning: {w}', dl_burned_orig: 'vi_burned.mp4 (original audio)',
+    warning: 'Warning: {w}', dl_burned_orig: 'vi_burned.mp4 (original audio)', export_btn: '→ Downloads', export_done: '✓ copied to Downloads',
     stats: '{n} jobs · {d} done · total processing {tt} · avg {at}/job',
     running_line: 'Running: {name} · {step} · {p}%', summary: '{w} queued · {f} done',
     idle_line: 'Finished {f} videos. {w} waiting.', queue_empty: 'Queue is empty.',
@@ -881,7 +883,7 @@ const I18N = {
     srt_help_redo: 'Lưu sẽ làm lại video. Chỉ dòng đã sửa được đọc lại, các dòng khác lấy từ cache.',
     ctl_cancel: '[huỷ]', ctl_cancel_title: 'Huỷ job', ctl_remove_title: 'Xoá job và file của nó', confirm_remove: 'Xoá job "{name}" cùng các file đầu ra?',
     chip_running: 'chạy {p}%', chip_queued: 'chờ #{n}', chip_paused: 'dừng', chip_done: 'xong {t}', chip_error: 'lỗi',
-    warning: 'Cảnh báo: {w}', dl_burned_orig: 'vi_burned.mp4 (audio gốc)',
+    warning: 'Cảnh báo: {w}', dl_burned_orig: 'vi_burned.mp4 (audio gốc)', export_btn: '→ Downloads', export_done: '✓ đã chép vào Downloads',
     stats: 'Tổng {n} job · {d} xong · Tổng thời gian xử lý {tt} · TB {at}/job',
     running_line: 'Đang chạy: {name} · {step} · {p}%', summary: '{w} chờ · {f} xong',
     idle_line: 'Đã xong {f} video. {w} video đang chờ.', queue_empty: 'Hàng đợi trống.',
@@ -1779,7 +1781,25 @@ function updateRow(article, job) {
       ? t('dl_burned_orig')
       : downloadLabels[kind] || kind;
     link.dataset.primary = 'true';
-    ui.outputs.appendChild(link);
+    const exportBtn = document.createElement('button');
+    exportBtn.type = 'button';
+    exportBtn.className = 'export';
+    exportBtn.textContent = t('export_btn');
+    exportBtn.addEventListener('click', async () => {
+      exportBtn.disabled = true;
+      try {
+        const response = await fetch(`/api/jobs/${job.id}/export/${kind}`, { method: 'POST' });
+        if (!response.ok) throw new Error(await response.text());
+        const { path } = await response.json();
+        exportBtn.textContent = t('export_done');
+        exportBtn.title = path;
+      } catch (error) {
+        finishWithError(error);
+      } finally {
+        exportBtn.disabled = false;
+      }
+    });
+    ui.outputs.append(link, exportBtn);
   }
 }
 

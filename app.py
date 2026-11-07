@@ -906,6 +906,10 @@ def download(job_id: str, kind: str):
     if not path.is_file():
         raise HTTPException(status_code=404, detail="File not ready")
 
+    return FileResponse(path, filename=_download_name(job, kind, path))
+
+
+def _download_name(job: JobState, kind: str, path: Path) -> str:
     original_stem = job.options.get("original_stem", path.stem)
     download_names = {
         "output_burned_video": f"{original_stem}_vi_burned.mp4",
@@ -916,7 +920,26 @@ def download(job_id: str, kind: str):
         "audio": f"{original_stem}_audio.wav",
         "input": path.name,
     }
-    return FileResponse(path, filename=download_names.get(kind, path.name))
+    return download_names.get(kind, path.name).replace("/", "-")
+
+
+@app.post("/api/jobs/{job_id}/export/{kind}")
+def export_file(job_id: str, kind: str):
+    """Copy an output straight from the job dir to ~/Downloads/<channel>/ (server and browser share this machine)."""
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        path = Path(job.files.get(kind, ""))
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="File not ready")
+
+    folder = (job.options.get("source_credit") or job.options.get("source_channel") or "").replace("/", "-").strip(". ")
+    dest_dir = Path.home() / "Downloads" / (folder or "ViVidDubber")
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / _download_name(job, kind, path)
+    shutil.copy2(path, dest)
+    return {"ok": True, "path": str(dest)}
 
 
 def _run_job(job_id: str) -> None:
