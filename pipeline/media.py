@@ -74,8 +74,11 @@ def resolve_video_urls(url: str) -> list[tuple[str, str, str]]:
     return [(url, info.get("title") or "Untitled", _channel(info))]
 
 
-def download_video(url: str, job_dir: Path, preferred_height: int = 720) -> tuple[Path, str, str]:
-    """Download a single YouTube video via yt-dlp. Returns (input_path, title, channel)."""
+def download_video(url: str, job_dir: Path, preferred_height: int = 720, sub_lang: str = "") -> tuple[Path, str, str]:
+    """Download a single YouTube video via yt-dlp. Returns (input_path, title, channel).
+
+    With `sub_lang`, the uploader's own subtitles in that language (never YouTube's auto captions: no
+    punctuation, worse than Whisper) are saved next to it as `yt_sub.<lang>.srt` when the video has them."""
     import yt_dlp
 
     ydl_opts = {
@@ -94,14 +97,26 @@ def download_video(url: str, job_dir: Path, preferred_height: int = 720) -> tupl
         "max_sleep_interval": 15,
         **_ydl_common_opts(),
     }
-    for attempt in range(3):
+    if sub_lang:
+        ydl_opts.update(
+            writesubtitles=True,
+            subtitleslangs=[f"{sub_lang}.*"],  # en, en-US, en-GB, ...
+            # Own name: an `input.en.srt` would sort before input.mp4 in the glob below.
+            outtmpl={"default": ydl_opts["outtmpl"], "subtitle": str(job_dir / "yt_sub.%(ext)s")},
+            postprocessors=[{"key": "FFmpegSubtitlesConvertor", "format": "srt"}],
+        )
+    for attempt in range(4):
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
             break
         except yt_dlp.utils.DownloadError as exc:
+            if ydl_opts.get("writesubtitles") and "subtitles" in str(exc):
+                # A failed subtitle fetch (429 is common) aborts the whole download: go on without, Whisper covers it.
+                ydl_opts.update(writesubtitles=False, postprocessors=[])
+                continue
             # YouTube now and then answers 403 for a stream URL; a fresh extraction gets a working one.
-            if "403" not in str(exc) or attempt == 2:
+            if "403" not in str(exc) or attempt >= 2:
                 raise
     video = (info.get("entries") or [info])[0]
     title = video.get("title") or "video"

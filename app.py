@@ -36,7 +36,7 @@ JOB_TTL_SECONDS = 3600 * 6  # 6 hours
 from pipeline.media import burn_subtitles, download_video, extract_audio, mux_soft_subtitles, probe_media, replace_audio, resolve_video_urls, trim_video, YT_ID_RE
 from pipeline.separate import separate_background
 from pipeline.subtitle import SubtitleBlock, parse_srt, split_for_display, write_srt
-from pipeline.transcribe import FasterWhisperTranscriber
+from pipeline.transcribe import FasterWhisperTranscriber, regroup_cues
 from pipeline.translate import EnViT5Translator, GoogleTranslator, HuggingFaceTranslator
 from pipeline.tts import DUB_PHASES, EdgeTTSEngine, VieNeuTTS, create_vietnamese_dub
 
@@ -966,8 +966,19 @@ def _run_job(job_id: str) -> None:
         if video_url:
             state = _begin_step(job_id, "Downloading video from YouTube", 10, input_path)
             if state is None:
-                input_path, source_title, source_channel = download_video(video_url, job_dir)
+                # The uploader's own subtitles replace Whisper. Not on a cut (their times are for the whole video).
+                want_subs = (opts.get("job_mode", "full") == "full" and opts.get("has_srt") != "true"
+                             and not opts.get("trim_start") and not opts.get("trim_end"))
+                source_lang = opts.get("source_lang", "en")
+                input_path, source_title, source_channel = download_video(
+                    video_url, job_dir, sub_lang=source_lang if want_subs else "")
                 _add_file(job_id, "input", input_path)
+                for yt_sub in sorted(job_dir.glob("yt_sub.*.srt"))[:1]:
+                    blocks = regroup_cues(parse_srt(yt_sub.read_text(encoding="utf-8")), source_lang)
+                    if blocks:
+                        original_srt.write_text(write_srt(blocks), encoding="utf-8")
+                        _add_file(job_id, "original_srt", original_srt)
+                        opts["subtitle_source"] = "youtube"
                 opts.update(original_stem=source_title, source_channel=source_channel)  # kept for a resumed job
                 _set_job(job_id, options=dict(opts))
             elif state in ("pause", "cancel"):
@@ -1026,7 +1037,8 @@ def _run_job(job_id: str) -> None:
             subtitle_for_export = vi_srt
             _add_file(job_id, "vi_srt", vi_srt)
         else:
-            state = _begin_step(job_id, "Extracting audio", 15, audio_path)
+            # The WAV only feeds Whisper: with original.srt already there (YouTube's subtitles) skip it too.
+            state = _begin_step(job_id, "Extracting audio", 15, original_srt if original_srt.exists() else audio_path)
             if state is None:
                 extract_audio(input_path, audio_path)
                 _add_file(job_id, "audio", audio_path)

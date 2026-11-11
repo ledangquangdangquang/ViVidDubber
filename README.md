@@ -35,6 +35,7 @@ video -> (optional cut) -> audio -> subtitles (Whisper) -> translate to Vietname
 - **Video**: burned-in Vietnamese subtitles (NVENC when available), soft-subtitle MP4, optional cut (start/end time), horizontal flip, a blur band to hide the source video's own subtitles, and a "Cre: <channel>" source credit.
 - **Subtitles only**: untick the voice-over option to get burned Vietnamese subtitles over the original audio.
 - **Batch queue**: many files or a whole YouTube playlist, processed one by one; pause / resume / cancel; download all results as a zip.
+- **YouTube's own subtitles**: when a video has uploader-provided subtitles in the source language, they are downloaded with it and Whisper is skipped (auto captions are not used; not for trimmed jobs).
 - **Web UI**: English / Vietnamese interface, dark / light theme.
 - **No paid APIs.**
 

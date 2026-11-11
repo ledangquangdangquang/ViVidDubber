@@ -1125,8 +1125,10 @@ function jobSteps(opts = {}) {
       (key !== 'st_burn' || opts.export_mode === 'burn') && key !== 'st_transform');
   }
   const trim = opts.trim_start || opts.trim_end;
+  const ytSubs = opts.subtitle_source === 'youtube';  // set once the download found the uploader's subtitles
   return STEP_KEYS.map(([, key]) => key).filter(key =>
     (key !== 'st_download' || opts.video_url) && (key !== 'st_cut' || trim) && (key !== 'st_separate' || separate) &&
+    !(ytSubs && (key === 'st_audio' || key === 'st_asr')) &&
     (key !== 'st_translate' || opts.translate !== 'false') && (key !== 'st_dub' || opts.dub !== 'false') &&
     (key !== 'st_burn' || opts.export_mode === 'burn') && key !== 'st_transform');
 }
@@ -1999,7 +2001,7 @@ function renderDetails(job) {
   kv.push(['k_cut', o.trim_start || o.trim_end ? `${o.trim_start || '0:00'} → ${o.trim_end || t('trim_end_ph')}` : t('v_whole')]);
   if (mode === 'full') {
     kv.push(['k_lang', t(`lang_${o.source_lang || 'en'}`)]);
-    kv.push(['k_whisper', `${o.whisper_model || 'small'} · ${o.whisper_device_used || o.whisper_device || 'cpu'}`]);
+    kv.push(['k_whisper', o.subtitle_source === 'youtube' ? 'YouTube subtitles' : `${o.whisper_model || 'small'} · ${o.whisper_device_used || o.whisper_device || 'cpu'}`]);
     const providers = { google: 'Google', huggingface: 'Hy-MT2-1.8B', envit5: 'EnViT5' };
     kv.push(['k_translate', o.translate === 'false' ? t('v_off') : providers[o.translation_provider] || o.translation_provider || '—']);
   }

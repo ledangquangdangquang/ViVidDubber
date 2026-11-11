@@ -29,6 +29,20 @@ def test_long_silence_cuts():
 
 
 
+def test_regroup_cues_joins_screen_lines_into_sentences():
+    from pipeline.subtitle import SubtitleBlock as B
+    from pipeline.transcribe import regroup_cues
+    cues = [B(1, "00:00:01,000", "00:00:03,000", "<i>This is a sentence</i>"),
+            B(2, "00:00:03,000", "00:00:05,500", "split over two cues."),
+            B(3, "00:00:06,000", "00:00:07,000", "Next one.")]
+    out = regroup_cues(cues)
+    assert [(b.start, b.end, b.text) for b in out] == [
+        ("00:00:01,000", "00:00:05,500", "This is a sentence split over two cues."),
+        ("00:00:06,000", "00:00:07,000", "Next one.")]
+    zh = regroup_cues([B(1, "00:00:01,000", "00:00:02,000", "它可以"), B(2, "00:00:02,000", "00:00:03,000", "杀人。")], "zh")
+    assert [b.text for b in zh] == ["它可以杀人。"]
+
+
 def test_cjk_cuts_at_fullwidth_marks():
     from pipeline.transcribe import _CJK_LIMITS
     segs = [_seg((0.0, 1.0, "它可以杀人"), (1.0, 1.2, "。"), (1.3, 2.0, "你知道吗"), (2.0, 2.1, "？"))]
@@ -84,5 +98,6 @@ if __name__ == "__main__":
     test_cuda_oom_frees_vram_and_retries_on_gpu()
     test_cuda_oom_falls_back_to_cpu_when_nothing_to_free()
     test_cpu_drops_gpu_only_compute_type()
+    test_regroup_cues_joins_screen_lines_into_sentences()
     test_cjk_cuts_at_fullwidth_marks()
     print("ok")

@@ -3,8 +3,10 @@ from __future__ import annotations
 from collections.abc import Callable
 import os
 from pathlib import Path
+import re
+from types import SimpleNamespace
 
-from .subtitle import SubtitleBlock, seconds_to_srt_time, write_srt
+from .subtitle import SubtitleBlock, seconds_to_srt_time, srt_time_to_seconds, write_srt
 
 
 class TranscriptionError(RuntimeError):
@@ -49,6 +51,21 @@ def group_sentences(
     if current:
         chunks.append((start, current[-1].end, "".join(x.word for x in current).strip()))
     return [c for c in chunks if c[2]]
+
+
+def regroup_cues(blocks: list[SubtitleBlock], source_lang: str = "en") -> list[SubtitleBlock]:
+    """Ready-made subtitles (YouTube's) are screen lines, not sentences: regroup them with the same
+    rules as Whisper output, each cue standing in for one word."""
+    cjk = source_lang in _PUNCTUATION_PROMPTS
+    segments = [
+        SimpleNamespace(words=[SimpleNamespace(
+            start=srt_time_to_seconds(b.start), end=srt_time_to_seconds(b.end),
+            word=("" if cjk else " ") + re.sub(r"<[^>]+>|\{\\[^}]*\}", "", b.text),  # <i>, {\an8}
+        )])
+        for b in blocks
+    ]
+    chunks = group_sentences(segments, **(_CJK_LIMITS if cjk else {}))
+    return [SubtitleBlock(i, seconds_to_srt_time(s), seconds_to_srt_time(e), t) for i, (s, e, t) in enumerate(chunks, 1)]
 
 
 # A CJK character carries ~3x the speech of a Latin one, so the char caps shrink to keep cues the same length.

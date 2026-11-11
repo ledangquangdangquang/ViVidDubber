@@ -33,6 +33,7 @@ video -> (cắt, tuỳ chọn) -> audio -> phụ đề (Whisper) -> dịch sang 
 - **Video**: burn phụ đề Việt (dùng NVENC nếu có), MP4 phụ đề mềm, cắt đoạn (thời điểm bắt đầu/kết thúc), lật ngang, làm mờ dải đáy để che phụ đề có sẵn của video gốc, ghi "Cre: <tên kênh>" lên video.
 - **Chỉ phụ đề**: bỏ tick lồng tiếng để có video burn phụ đề Việt, giữ nguyên audio gốc.
 - **Hàng đợi**: nhiều file hoặc cả playlist YouTube, chạy lần lượt; tạm dừng / tiếp tục / huỷ; tải tất cả kết quả thành file zip.
+- **Phụ đề có sẵn trên YouTube**: video có phụ đề do người đăng tải lên (đúng ngôn ngữ nguồn) thì app tải luôn và bỏ qua bước Whisper; phụ đề tự động của YouTube không dùng. Không áp dụng khi cắt video.
 - **Giao diện web**: tiếng Anh / tiếng Việt, sáng / tối.
 - **Không dùng API trả phí.**
 
