@@ -12,6 +12,8 @@ import threading
 import urllib.parse
 import urllib.request
 
+from .subtitle import cut_blocks, parse_srt, write_srt
+
 
 class MediaToolError(RuntimeError):
     pass
@@ -111,8 +113,9 @@ def download_video(url: str, job_dir: Path, preferred_height: int = 720, sub_lan
                 info = ydl.extract_info(url, download=True)
             break
         except yt_dlp.utils.DownloadError as exc:
-            if ydl_opts.get("writesubtitles") and "subtitles" in str(exc):
-                # A failed subtitle fetch (429 is common) aborts the whole download: go on without, Whisper covers it.
+            if ydl_opts.get("writesubtitles") and any(m in str(exc) for m in ("subtitles", "Postprocessing")):
+                # A failed subtitle fetch (429 is common) or SRT conversion aborts the whole download:
+                # go on without, Whisper covers it.
                 ydl_opts.update(writesubtitles=False, postprocessors=[])
                 continue
             # YouTube now and then answers 403 for a stream URL; a fresh extraction gets a working one.
@@ -288,6 +291,46 @@ def trim_video(video_path: Path, output_path: Path, start: str = "", end: str = 
         *(["-ss", start] if start else []), *(["-to", end] if end else []),
         "-i", str(video_path), *codec_args, "-c:a", "aac", "-b:a", "192k", str(output_path),
     ], timeout=7200, env=env)
+    return output_path
+
+
+def remove_section(video_path: Path, output_path: Path, start: float, end: float | None) -> Path:
+    """Drop seconds [start, end) from one of our own outputs and close the gap (`end=None`: to the end of the video).
+    Picture and sound are cut in one re-encode; soft subtitles don't survive an ffmpeg cut with usable times
+    (a concat of two trims kept the removed cue and left the later one unshifted), so they are read out,
+    shifted here and muxed back."""
+    require_tool("ffmpeg")
+    kinds = {s["codec_type"] for s in probe_media(video_path)["streams"]}
+    av_path = output_path.with_suffix(".av.mp4") if "subtitle" in kinds else output_path
+    codec_args, env = _video_encoder()
+    keep = [(0.0, start)] if start > 0 else []
+    if end is not None:
+        keep.append((end, None))
+    graph, maps = [], []
+    for stream, prefix, present in (("v", "", True), ("a", "a", "audio" in kinds)):
+        if not present:
+            continue
+        for i, (a, b) in enumerate(keep):
+            span = f"start={a}" + (f":end={b}" if b is not None else "")
+            graph.append(f"[0:{stream}:0]{prefix}trim={span},{prefix}setpts=PTS-STARTPTS[{stream}{i}]")
+        graph.append("".join(f"[{stream}{i}]" for i in range(len(keep)))
+                     + f"concat=n={len(keep)}:v={int(stream == 'v')}:a={int(stream == 'a')}[{stream}]")
+        maps += ["-map", f"[{stream}]"]
+    run_command(["ffmpeg", "-y", "-i", str(video_path), "-filter_complex", ";".join(graph), *maps,
+                 *codec_args, "-c:a", "aac", "-b:a", "192k", str(av_path)], timeout=7200, env=env)
+    if av_path != output_path:
+        srt_path = output_path.with_suffix(".srt")
+        try:
+            run_command(["ffmpeg", "-y", "-i", str(video_path), "-map", "0:s:0", "-f", "srt", str(srt_path)])
+            blocks = cut_blocks(parse_srt(srt_path.read_text(encoding="utf-8")), start, end)
+            if blocks:  # an SRT with no cue breaks the mux
+                srt_path.write_text(write_srt(blocks), encoding="utf-8")
+                mux_soft_subtitles(av_path, srt_path, output_path)
+            else:
+                av_path.replace(output_path)
+        finally:
+            av_path.unlink(missing_ok=True)
+            srt_path.unlink(missing_ok=True)
     return output_path
 
 

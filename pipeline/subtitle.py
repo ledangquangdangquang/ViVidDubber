@@ -134,3 +134,19 @@ def write_srt(blocks: list[SubtitleBlock]) -> str:
         output_lines.append(wrap_subtitle_text(block.text))
         output_lines.append("")
     return "\n".join(output_lines)
+
+
+def cut_blocks(blocks: list[SubtitleBlock], start: float, end: float | None) -> list[SubtitleBlock]:
+    """Cues after seconds [start, end) were removed from the video (`end=None`: to the end): later cues move
+    earlier, a cue reaching into the removed part is clipped, one wholly inside it is dropped."""
+    gap = (end - start) if end is not None else float("inf")
+    out: list[SubtitleBlock] = []
+    for block in blocks:
+        a, b = srt_time_to_seconds(block.start), srt_time_to_seconds(block.end)
+        if end is not None and a >= end:
+            a, b = a - gap, b - gap
+        elif b > start:  # touches the removed part
+            a, b = (a, max(start, b - gap)) if a < start else (start, b - gap)
+        if b - a > 0.05:
+            out.append(SubtitleBlock(len(out) + 1, seconds_to_srt_time(a), seconds_to_srt_time(b), block.text))
+    return out

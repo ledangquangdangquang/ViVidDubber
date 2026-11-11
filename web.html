@@ -711,6 +711,32 @@ details.more[open] > summary { margin-block-end: var(--space-sm); }
   </form>
 </dialog>
 
+<dialog class="sheet" id="cutDialog" aria-labelledby="cutTitle">
+  <form id="cutForm">
+    <header class="sheet-head">
+      <h2 id="cutTitle" data-i18n="cut_title">cut video</h2>
+      <button type="button" class="ctl-btn" id="closeCutBtn" data-i18n-attr="aria-label:close">[esc]</button>
+    </header>
+    <div class="sheet-body">
+      <p class="field-help" data-i18n="cut_help"></p>
+      <div class="row">
+        <div class="field">
+          <label for="cutStart" data-i18n="cut_from">remove from</label>
+          <input class="text-input" id="cutStart" type="text" inputmode="numeric" pattern="\d+(:\d{1,2}){0,2}(\.\d+)?" placeholder="0:00" data-i18n-attr="title:trim_title">
+        </div>
+        <div class="field">
+          <label for="cutEnd" data-i18n="trim_to">to</label>
+          <input class="text-input" id="cutEnd" type="text" inputmode="numeric" pattern="\d+(:\d{1,2}){0,2}(\.\d+)?" data-i18n-attr="placeholder:trim_end_ph;title:trim_title">
+        </div>
+      </div>
+    </div>
+    <footer class="sheet-foot">
+      <p class="form-error" id="cutError" role="alert"></p>
+      <button class="btn btn-primary" id="cutSaveBtn" type="submit" data-i18n="cut_save"></button>
+    </footer>
+  </form>
+</dialog>
+
 <dialog class="sheet" id="srtDialog" aria-labelledby="srtTitle">
   <form id="srtForm">
     <header class="sheet-head">
@@ -781,6 +807,9 @@ const I18N = {
     adding_n: 'Adding video {i}/{n}…', add_link_failed: 'Adding the link failed: {msg}',
     uploading_n: 'Uploading {i}/{n}: {name}', upload_failed: 'Upload failed ({name}): {msg}',
     ctl_pause: '[pause]', ctl_pause_title: 'Pause', ctl_resume: '[resume]', ctl_resume_title: 'Resume',
+    cut_from: 'remove from',
+    cut_video: '[cut]', cut_video_title: 'Cut a part out of the finished video', cut_title: 'cut out a part', cut_save: 'cut out', st_trim: 'Cut finished video', k_out_cut: 'cut out',
+    cut_help: 'Removes this part from the finished video files (soft / dub / burned) and joins the rest; the files are replaced. Nothing is recognised, translated or voiced again. Empty start = from the beginning, empty end = to the end. Times are those of the video as it is now.',
     edit_subs: '[edit subs]', edit_subs_title: 'Edit the Vietnamese subtitles', chip_review: 'review subs',
     st_review: 'Waiting for your subtitle edits', srt_edit_title: 'edit subtitles', srt_loading: 'Loading subtitles…',
     srt_save_review: 'save & continue', srt_save_redo: 'save & render again',
@@ -876,6 +905,9 @@ const I18N = {
     adding_n: 'Đang thêm video {i}/{n}…', add_link_failed: 'Thêm link thất bại: {msg}',
     uploading_n: 'Đang upload {i}/{n}: {name}', upload_failed: 'Upload thất bại ({name}): {msg}',
     ctl_pause: '[dừng]', ctl_pause_title: 'Tạm dừng', ctl_resume: '[tiếp]', ctl_resume_title: 'Tiếp tục',
+    cut_from: 'bỏ từ',
+    cut_video: '[cắt]', cut_video_title: 'Cắt bỏ một đoạn khỏi video đã xong', cut_title: 'cắt bỏ một đoạn', cut_save: 'cắt bỏ', st_trim: 'Cắt video đã xong', k_out_cut: 'đã cắt bỏ',
+    cut_help: 'Bỏ đoạn này khỏi các file video kết quả (soft / dub / burned) rồi nối phần còn lại; file cũ bị ghi đè. Không nhận dạng, dịch hay lồng tiếng lại. Bỏ trống điểm đầu = từ đầu video, bỏ trống điểm cuối = đến hết. Mốc thời gian tính theo video hiện tại.',
     edit_subs: '[sửa phụ đề]', edit_subs_title: 'Sửa phụ đề tiếng Việt', chip_review: 'chờ sửa phụ đề',
     st_review: 'Chờ bạn sửa phụ đề', srt_edit_title: 'sửa phụ đề', srt_loading: 'Đang tải phụ đề…',
     srt_save_review: 'lưu & chạy tiếp', srt_save_redo: 'lưu & làm lại video',
@@ -1104,9 +1136,10 @@ const STEP_KEYS = [
 ];
 function stepKey(step) {
   const hit = STEP_KEYS.find(([prefix]) => (step || '').startsWith(prefix));
-  return hit ? hit[1] : { Waiting: 'st_waiting', Done: 'st_done', Failed: 'st_failed', 'Review subtitles': 'st_review' }[step];
+  return hit ? hit[1] : { Waiting: 'st_waiting', Done: 'st_done', Failed: 'st_failed', 'Review subtitles': 'st_review', 'Trimming outputs': 'st_trim' }[step];
 }
 function jobSteps(opts = {}) {
+  if (opts.cut_pending === 'true') return ['st_trim'];  // POST /cut: _run_job only trims the outputs
   if (opts.job_mode === 'transform') {
     const trim = opts.trim_start || opts.trim_end;
     return STEP_KEYS.map(([, key]) => key).filter(key =>
@@ -1687,7 +1720,8 @@ function createRow(jobId) {
     if (confirm(t('confirm_remove', { name: article._ui.name.textContent }))) control(jobId, 'cancel', btn);
   });
   const editSubs = ctlButton('ctl-btn', 'edit_subs', 'edit_subs_title', () => openSrtEditor(article._job));
-  actions.append(chip, editSubs, pause, resume, cancel, remove);
+  const cut = ctlButton('ctl-btn', 'cut_video', 'cut_video_title', () => openCutDialog(article._job));
+  actions.append(chip, editSubs, cut, pause, resume, cancel, remove);
   head.append(title, actions);
 
   const progressTrack = document.createElement('div');
@@ -1713,7 +1747,7 @@ function createRow(jobId) {
   outputs.className = 'outputs';
 
   article.append(head, progressTrack, line, error, warn, outputs);
-  article._ui = { name, meta, chip, editSubs, pause, resume, cancel, remove, progressBar, progressRest, progressTrack, line, error, warn, outputs };
+  article._ui = { name, meta, chip, editSubs, cut, pause, resume, cancel, remove, progressBar, progressRest, progressTrack, line, error, warn, outputs };
   applyI18n(article);
   return article;
 }
@@ -1754,6 +1788,7 @@ function updateRow(article, job) {
   ui.resume.hidden = state !== 'paused';
   // vi.srt can be edited whenever the worker is not on the job: a review stop, a pause, or after it ended.
   ui.editSubs.hidden = !(job.files?.vi_srt && (state === 'paused' || state === 'done' || state === 'error'));
+  ui.cut.hidden = state !== 'done';
   ui.cancel.hidden = state === 'done' || state === 'error';
   ui.remove.hidden = !ui.cancel.hidden;
   ui.pause.disabled = false;
@@ -1999,6 +2034,7 @@ function renderDetails(job) {
   const mode = o.job_mode || 'full';
   const kv = [['k_mode', t(`mode_${mode}`)]];
   kv.push(['k_cut', o.trim_start || o.trim_end ? `${o.trim_start || '0:00'} → ${o.trim_end || t('trim_end_ph')}` : t('v_whole')]);
+  if (o.cut_start || o.cut_end) kv.push(['k_out_cut', `${o.cut_start || '0:00'} → ${o.cut_end || t('trim_end_ph')}`]);
   if (mode === 'full') {
     kv.push(['k_lang', t(`lang_${o.source_lang || 'en'}`)]);
     kv.push(['k_whisper', o.subtitle_source === 'youtube' ? 'YouTube subtitles' : `${o.whisper_model || 'small'} · ${o.whisper_device_used || o.whisper_device || 'cpu'}`]);
@@ -2108,6 +2144,34 @@ document.getElementById('srtForm').addEventListener('submit', async event => {
   }
 });
 document.getElementById('closeSrtBtn').addEventListener('click', () => srtDialog.close());
+
+// ---------------------------------------------------------------- cut a finished video (cut_outputs in app.py)
+const cutDialog = document.getElementById('cutDialog');
+const cutError = document.getElementById('cutError');
+let cutJobId = null;
+function openCutDialog(job) {
+  cutJobId = job.id;
+  cutError.textContent = '';
+  document.getElementById('cutForm').reset();
+  applyI18n(cutDialog);
+  if (!cutDialog.open) cutDialog.showModal();
+}
+document.getElementById('cutForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const body = { start: document.getElementById('cutStart').value, end: document.getElementById('cutEnd').value };
+  try {
+    const res = await fetch(`/api/jobs/${cutJobId}/cut`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    if (!res.ok) throw await apiError(res);
+    cutDialog.close();
+    pollQueue();
+  } catch (err) {
+    cutError.textContent = err.message;
+  }
+});
+document.getElementById('closeCutBtn').addEventListener('click', () => cutDialog.close());
+cutDialog.addEventListener('click', event => { if (event.target === cutDialog) cutDialog.close(); });  // backdrop
 srtDialog.addEventListener('click', event => { if (event.target === srtDialog) srtDialog.close(); });  // backdrop
 
 // ---------------------------------------------------------------- server config / provider help

@@ -33,9 +33,9 @@ MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
 _TIME_RE = re.compile(r"\d+(:\d{1,2}){0,2}(\.\d+)?")  # trim points: 90, 1:30, 1:02:03.5
 JOB_TTL_SECONDS = 3600 * 6  # 6 hours
 
-from pipeline.media import burn_subtitles, download_video, extract_audio, mux_soft_subtitles, probe_media, replace_audio, resolve_video_urls, trim_video, YT_ID_RE
+from pipeline.media import burn_subtitles, download_video, extract_audio, mux_soft_subtitles, probe_media, remove_section, replace_audio, resolve_video_urls, trim_video, YT_ID_RE
 from pipeline.separate import separate_background
-from pipeline.subtitle import SubtitleBlock, parse_srt, split_for_display, write_srt
+from pipeline.subtitle import SubtitleBlock, parse_srt, split_for_display, srt_time_to_seconds, write_srt
 from pipeline.transcribe import FasterWhisperTranscriber, regroup_cues
 from pipeline.translate import EnViT5Translator, GoogleTranslator, HuggingFaceTranslator
 from pipeline.tts import DUB_PHASES, EdgeTTSEngine, VieNeuTTS, create_vietnamese_dub
@@ -880,14 +880,59 @@ def save_subtitles(job_id: str, texts: list[str] = Body(..., embed=True)):
             raise HTTPException(status_code=409, detail="Job đang chạy hoặc đang chờ; dừng nó trước khi sửa phụ đề.")
         vi_srt.write_text(write_srt([SubtitleBlock(b.index, b.start, b.end, t) for b, t in zip(blocks, texts)]), encoding="utf-8")
         if job.status in {"done", "error"}:  # render again: drop every output built from the old subtitles
-            for kind in ("output_video", "output_dubbed_video", "output_burned_video"):
+            for kind in _OUTPUT_KINDS:
                 if kind in job.files:
                     Path(job.files.pop(kind)).unlink(missing_ok=True)
             (vi_srt.parent / "burned_video_only.mp4").unlink(missing_ok=True)
+            for key in ("cut_start", "cut_end", "cut_pending"):  # the new render is the whole video again
+                job.options.pop(key, None)
             job.options["redub"] = "true"
         job.options.pop("review_pending", None)
         job.options["reviewed"] = "true"
         job.status, job.step, job.error, job.progress = "queued", "Waiting", None, 0
+        job.pause_requested = False
+        job.updated_at = time.time()
+    _save_jobs()
+    _enqueue_job(job_id)
+    return {"ok": True, "status": "queued"}
+
+
+_OUTPUT_KINDS = ("output_video", "output_dubbed_video", "output_burned_video")
+
+
+def _time_seconds(value: str) -> float:
+    """A _TIME_RE string (90, 1:30, 1:02:03.5) in seconds."""
+    return sum(float(part) * 60 ** i for i, part in enumerate(reversed(value.split(":"))))
+
+
+@app.post("/api/jobs/{job_id}/cut")
+def cut_outputs(job_id: str, start: str = Body(""), end: str = Body("")):
+    """Queue the removal of [start, end] from a finished job's output videos (in place; nothing else reruns).
+    Empty start = from the beginning, empty end = to the end."""
+    start, end = start.strip(), end.strip()
+    if not (start or end) or any(t and not _TIME_RE.fullmatch(t) for t in (start, end)):
+        raise HTTPException(status_code=400, detail="Nhập điểm cắt dạng 90, 1:30 hoặc 1:02:03.")
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        if job.status != "done":
+            raise HTTPException(status_code=409, detail="Chỉ cắt được video của job đã xong.")
+        outputs = [Path(job.files[k]) for k in _OUTPUT_KINDS if Path(job.files.get(k, "")).is_file()]
+    if not outputs:
+        raise HTTPException(status_code=404, detail="Job không còn file video kết quả.")
+    duration = float(probe_media(outputs[0])["format"]["duration"])
+    start_sec, end_sec = _time_seconds(start or "0"), min(_time_seconds(end), duration) if end else duration
+    if start_sec >= end_sec:
+        raise HTTPException(status_code=400, detail=f"Đoạn cắt rỗng (video dài {duration:.0f} giây).")
+    start, end = start if start_sec > 0 else "", end if end_sec < duration else ""  # "" = that end of the video
+    if not (start or end):  # would replace the outputs with nothing
+        raise HTTPException(status_code=400, detail="Đoạn cắt bỏ là cả video.")
+    with JOBS_LOCK:
+        if job.status != "done":
+            raise HTTPException(status_code=409, detail="Chỉ cắt được video của job đã xong.")
+        job.options.update(cut_start=start, cut_end=end, cut_pending="true")
+        job.status, job.step, job.progress = "queued", "Waiting", 0
         job.pause_requested = False
         job.updated_at = time.time()
     _save_jobs()
@@ -942,6 +987,16 @@ def export_file(job_id: str, kind: str):
     return {"ok": True, "path": str(dest)}
 
 
+def _youtube_subtitles(job_dir: Path, source_lang: str, duration: float) -> list[SubtitleBlock]:
+    """The downloaded uploader subtitles as sentence cues, or [] when Whisper should run instead."""
+    for yt_sub in sorted(job_dir.glob("yt_sub.*.srt"))[:1]:
+        blocks = regroup_cues(parse_srt(yt_sub.read_text(encoding="utf-8", errors="replace")), source_lang)
+        # Some uploads only caption the intro, a song or a "subscribe" card: the dub would be silent for the rest.
+        if blocks and srt_time_to_seconds(blocks[-1].end) >= duration / 2:
+            return blocks
+    return []
+
+
 def _run_job(job_id: str) -> None:
     with JOBS_LOCK:
         job = JOBS[job_id]
@@ -962,6 +1017,23 @@ def _run_job(job_id: str) -> None:
             JOBS[job_id].status = "running"
             JOBS[job_id].pause_requested = False
 
+        if opts.get("cut_pending") == "true":  # POST /cut on a finished job: only its outputs change
+            state = _begin_step(job_id, "Trimming outputs", 50)
+            if state in ("pause", "cancel"):
+                return _finish_control(job_id, state)
+            outputs = [p for p in (output_video, output_dubbed_video, output_burned_video) if p.is_file()]
+            for path in outputs:
+                remove_section(path, path.with_suffix(".cut.mp4"), _time_seconds(opts.get("cut_start") or "0"),
+                               _time_seconds(opts["cut_end"]) if opts.get("cut_end") else None)
+            # Swap only once every cut exists: a restart in between would cut an already-cut file again.
+            for path in outputs:
+                path.with_suffix(".cut.mp4").replace(path)
+            with JOBS_LOCK:
+                JOBS[job_id].options.pop("cut_pending", None)
+            _set_step(job_id, "Done", 100)
+            _set_job(job_id, status="done")
+            return
+
         video_url = opts.get("video_url", "")
         if video_url:
             state = _begin_step(job_id, "Downloading video from YouTube", 10, input_path)
@@ -973,12 +1045,11 @@ def _run_job(job_id: str) -> None:
                 input_path, source_title, source_channel = download_video(
                     video_url, job_dir, sub_lang=source_lang if want_subs else "")
                 _add_file(job_id, "input", input_path)
-                for yt_sub in sorted(job_dir.glob("yt_sub.*.srt"))[:1]:
-                    blocks = regroup_cues(parse_srt(yt_sub.read_text(encoding="utf-8")), source_lang)
-                    if blocks:
-                        original_srt.write_text(write_srt(blocks), encoding="utf-8")
-                        _add_file(job_id, "original_srt", original_srt)
-                        opts["subtitle_source"] = "youtube"
+                blocks = _youtube_subtitles(job_dir, source_lang, float(probe_media(input_path)["format"]["duration"]))
+                if blocks:
+                    original_srt.write_text(write_srt(blocks), encoding="utf-8")
+                    _add_file(job_id, "original_srt", original_srt)
+                    opts["subtitle_source"] = "youtube"
                 opts.update(original_stem=source_title, source_channel=source_channel)  # kept for a resumed job
                 _set_job(job_id, options=dict(opts))
             elif state in ("pause", "cancel"):
@@ -1307,6 +1378,7 @@ def _log_dub_stats(job_id: str, input_path: Path, dub_phases: dict | None = None
             "gpu": _gpu_name(),
             "whisper_device": job.options.get("whisper_device"),
             "whisper_device_used": job.options.get("whisper_device_used"),
+            "subtitle_source": job.options.get("subtitle_source", "whisper"),  # "youtube": Whisper never ran
             "translate_device": job.options.get("translate_device"),
             "translation_provider": job.options.get("translation_provider"),
             "tts_provider": job.options.get("tts_provider", "edge"),
