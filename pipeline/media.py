@@ -76,7 +76,7 @@ def resolve_video_urls(url: str) -> list[tuple[str, str, str]]:
     return [(url, info.get("title") or "Untitled", _channel(info))]
 
 
-def download_video(url: str, job_dir: Path, preferred_height: int = 720, sub_lang: str = "") -> tuple[Path, str, str]:
+def download_video(url: str, job_dir: Path, preferred_height: int = 1080, sub_lang: str = "") -> tuple[Path, str, str]:
     """Download a single YouTube video via yt-dlp. Returns (input_path, title, channel).
 
     With `sub_lang`, the uploader's own subtitles in that language (never YouTube's auto captions: no
@@ -123,7 +123,8 @@ def download_video(url: str, job_dir: Path, preferred_height: int = 720, sub_lan
                 raise
     video = (info.get("entries") or [info])[0]
     title = video.get("title") or "video"
-    files = sorted(job_dir.glob("input.*"))
+    # Not yt-dlp's leftovers: an interrupted earlier run leaves `input.f299.mp4.part-Frag…`, which sorts first.
+    files = sorted(p for p in job_dir.glob("input.*") if p.suffix not in (".part", ".ytdl"))
     if not files:
         raise MediaToolError(f"No video downloaded from {url}")
     return files[0], title, _channel(video)
@@ -235,6 +236,19 @@ def _video_encoder() -> tuple[list[str], dict | None]:
     return _X264_ARGS, None
 
 
+def _run_encode(pre: list[str], post: list[str]) -> None:
+    """ffmpeg `pre + video codec + post`. NVENC passes the 256x256 probe but can still fail on the real
+    frame size when the resident models fill the VRAM ("CreateInputBuffer failed: out of memory" at
+    1080p with 3.5 of 4 GB used), so a failed NVENC run is repeated once with libx264."""
+    codec_args, env = _video_encoder()
+    try:
+        run_command([*pre, *codec_args, *post], timeout=7200, env=env)
+    except MediaToolError:
+        if codec_args is not _NVENC_ARGS:
+            raise
+        run_command([*pre, *_X264_ARGS, *post], timeout=7200)
+
+
 def _filter_path(path: Path) -> str:
     """A file path quoted for an ffmpeg filter option (Windows backslashes, ':' and "'" escaped)."""
     return "'" + str(path).replace("\\", "/").replace(":", "\\:").replace("'", "\\'") + "'"
@@ -251,7 +265,6 @@ def burn_subtitles(video_path: Path, srt_path: Path | None, output_path: Path, f
     if credit:
         # Read from a file with expansion off: channel names carry ':', quotes and '%' that drawtext would parse.
         credit_file.write_text(credit, encoding="utf-8")
-    codec_args, env = _video_encoder()
     # Write to a unique temp name: a resumed job may burn the same output while a background burn is still running.
     part = output_path.with_name(f"{output_path.stem}.{os.getpid()}-{threading.get_ident()}.part{output_path.suffix}")
     # hflip first so the subs stay readable; `cover` blurs the bottom band (the source's own hardsubs) under ours.
@@ -264,17 +277,9 @@ def burn_subtitles(video_path: Path, srt_path: Path | None, output_path: Path, f
         vf += (f"drawtext=textfile={_filter_path(credit_file)}:expansion=none:font=Sans:fontsize=h*0.035:fontcolor=white"
                ":borderw=2:bordercolor=black:x=w*0.025:y=h*0.035")
     vf = vf.strip(",")
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-i", str(video_path),
-        *([ "-vf", vf] if vf else []),
-        *codec_args,
-        *(["-c:a", "copy"] if keep_audio else ["-an"]),
-        str(part),
-    ]
     try:
-        run_command(cmd, timeout=7200, env=env)
+        _run_encode(["ffmpeg", "-y", "-i", str(video_path), *(["-vf", vf] if vf else [])],
+                    [*(["-c:a", "copy"] if keep_audio else ["-an"]), str(part)])
         part.replace(output_path)
     finally:
         part.unlink(missing_ok=True)
@@ -285,12 +290,8 @@ def trim_video(video_path: Path, output_path: Path, start: str = "", end: str = 
     """Cut [start, end] out of `video_path` (ffmpeg time syntax, e.g. "90" or "1:30"; empty = from start / to end).
     Re-encodes so the cut is frame-exact: a stream copy would start at the previous keyframe."""
     require_tool("ffmpeg")
-    codec_args, env = _video_encoder()
-    run_command([
-        "ffmpeg", "-y",
-        *(["-ss", start] if start else []), *(["-to", end] if end else []),
-        "-i", str(video_path), *codec_args, "-c:a", "aac", "-b:a", "192k", str(output_path),
-    ], timeout=7200, env=env)
+    _run_encode(["ffmpeg", "-y", *(["-ss", start] if start else []), *(["-to", end] if end else []), "-i", str(video_path)],
+                ["-c:a", "aac", "-b:a", "192k", str(output_path)])
     return output_path
 
 
@@ -302,7 +303,6 @@ def remove_section(video_path: Path, output_path: Path, start: float, end: float
     require_tool("ffmpeg")
     kinds = {s["codec_type"] for s in probe_media(video_path)["streams"]}
     av_path = output_path.with_suffix(".av.mp4") if "subtitle" in kinds else output_path
-    codec_args, env = _video_encoder()
     keep = [(0.0, start)] if start > 0 else []
     if end is not None:
         keep.append((end, None))
@@ -316,8 +316,8 @@ def remove_section(video_path: Path, output_path: Path, start: float, end: float
         graph.append("".join(f"[{stream}{i}]" for i in range(len(keep)))
                      + f"concat=n={len(keep)}:v={int(stream == 'v')}:a={int(stream == 'a')}[{stream}]")
         maps += ["-map", f"[{stream}]"]
-    run_command(["ffmpeg", "-y", "-i", str(video_path), "-filter_complex", ";".join(graph), *maps,
-                 *codec_args, "-c:a", "aac", "-b:a", "192k", str(av_path)], timeout=7200, env=env)
+    _run_encode(["ffmpeg", "-y", "-i", str(video_path), "-filter_complex", ";".join(graph), *maps],
+                ["-c:a", "aac", "-b:a", "192k", str(av_path)])
     if av_path != output_path:
         srt_path = output_path.with_suffix(".srt")
         try:

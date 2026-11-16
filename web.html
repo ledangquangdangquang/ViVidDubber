@@ -505,6 +505,13 @@ details.more[open] > summary { margin-block-end: var(--space-sm); }
             <button type="button" id="resolveBtn" class="btn" data-i18n="analyze">analyze</button>
           </div>
           <div id="videoList" class="video-list" hidden></div>
+          <label for="videoHeight" data-i18n="video_height">resolution</label>
+          <select id="videoHeight" name="video_height">
+            <option value="1080" selected>1080p</option>
+            <option value="720">720p</option>
+            <option value="480">480p</option>
+            <option value="360">360p</option>
+          </select>
         </div>
         <div class="row">
           <div class="field">
@@ -776,7 +783,7 @@ const I18N = {
     g_source: 'source', source_aria: 'Video source',
     drop_title: 'Choose or drop videos', drop_meta: 'MP4 · MOV · MKV · WEBM · AVI · M4V · processed in order',
     files_n: '{n} videos', files_meta: '{n} files · {size} · processed in order', no_files: 'No video yet. Pick at least one file.',
-    youtube_link: 'YouTube link', analyze: 'analyze', analyzing: 'Analyzing…',
+    youtube_link: 'YouTube link', video_height: 'resolution (max)', analyze: 'analyze', analyzing: 'Analyzing…',
     no_link: 'No link yet. Paste a YouTube link above.', resolve_failed: 'Analyzing the link failed: {msg}',
     trim_from: 'cut from', trim_to: 'to', trim_end_ph: 'end of video', trim_title: 'e.g. 90, 1:30, 1:02:03',
     g_recog: 'recognition & translation', video_lang: 'video language',
@@ -874,7 +881,7 @@ const I18N = {
     g_source: 'nguồn', source_aria: 'Nguồn video',
     drop_title: 'Chọn hoặc thả nhiều video', drop_meta: 'MP4 · MOV · MKV · WEBM · AVI · M4V · chạy lần lượt',
     files_n: '{n} video', files_meta: '{n} file · {size} · chạy lần lượt', no_files: 'Chưa có video. Chọn ít nhất một file để tiếp tục.',
-    youtube_link: 'Link YouTube', analyze: 'phân tích', analyzing: 'Đang phân tích…',
+    youtube_link: 'Link YouTube', video_height: 'độ phân giải (tối đa)', analyze: 'phân tích', analyzing: 'Đang phân tích…',
     no_link: 'Chưa có link. Dán link YouTube vào ô trên.', resolve_failed: 'Phân tích link thất bại: {msg}',
     trim_from: 'cắt từ', trim_to: 'đến', trim_end_ph: 'hết video', trim_title: 'Vd: 90, 1:30, 1:02:03',
     g_recog: 'nhận dạng & dịch', video_lang: 'ngôn ngữ video',
@@ -1434,7 +1441,7 @@ musicVolume.addEventListener('input', () => { musicVolumeVal.textContent = `${mu
 // ---------------------------------------------------------------- presets
 // shortcut: presets live in this browser's localStorage; move them to the server if they must follow you to other browsers.
 // Order matters: source_lang before translation_provider, tts_provider before tts_voice (their change handlers reset the next one).
-const PRESET_FIELDS = ['job_mode', 'source_lang', 'whisper_model', 'translation_provider', 'translateToggle',
+const PRESET_FIELDS = ['job_mode', 'video_height', 'source_lang', 'whisper_model', 'translation_provider', 'translateToggle',
   'subtitle_font_size', 'coverBottom', 'flip', 'show_source', 'dubToggle', 'background_volume', 'voice_volume',
   'review_srt', 'separate_vocals', 'music_volume', 'tts_provider', 'tts_voice', 'clone_voice_name', 'whisper_device', 'translate_device',
   'separate_device', 'tts_device'];

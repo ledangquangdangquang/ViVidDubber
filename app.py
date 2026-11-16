@@ -18,7 +18,7 @@ import uuid
 import zipfile
 
 from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 from starlette.background import BackgroundTask
 
 _DIR = Path(__file__).parent
@@ -505,6 +505,7 @@ async def create_job(
     video_url: str = Form(""),
     target_lang: str = Form("vi"),
     source_lang: str = Form("en"),
+    video_height: int = Form(1080),
     whisper_model: str = Form("large-v3-turbo"),
     whisper_device: str = Form("cuda"),
     whisper_compute_type: str = Form(""),
@@ -541,6 +542,8 @@ async def create_job(
         raise HTTPException(status_code=400, detail="Unsupported job mode.")
     if translation_provider not in {"google", "envit5", "huggingface"}:
         raise HTTPException(status_code=400, detail="Unsupported translation provider.")
+    if video_height not in {360, 480, 720, 1080}:
+        raise HTTPException(status_code=400, detail="Unsupported video resolution.")
     if source_lang not in {"en", "zh", "ja"}:
         raise HTTPException(status_code=400, detail="Unsupported source language.")
     if source_lang != "en" and translation_provider == "envit5":
@@ -666,6 +669,7 @@ async def create_job(
             "trim_start": trim_start,
             "trim_end": trim_end,
             "video_url": video_url,
+            "video_height": video_height,
             "original_stem": source_title,
         },
     )
@@ -697,22 +701,31 @@ def download_all():
     if not entries:
         raise HTTPException(status_code=404, detail="Chưa có video nào lồng tiếng xong để nén.")
 
-    tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
-    tmp.close()
+    # In jobs/ because /tmp can be tmpfs (RAM); unnamed, so the OS reclaims it on close or crash.
+    tmp = tempfile.TemporaryFile(suffix=".zip", dir=_JOBS_DIR)
     used_names: set[str] = set()
-    with zipfile.ZipFile(tmp.name, "w", zipfile.ZIP_STORED) as zf:
-        for job_id, stem, path in entries:
-            name = f"{stem}{path.suffix}"
-            if name in used_names:
-                name = f"{stem}_{job_id[:8]}{path.suffix}"
-            used_names.add(name)
-            zf.write(path, arcname=name)
+    try:
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_STORED) as zf:
+            for job_id, stem, path in entries:
+                name = f"{stem}{path.suffix}"
+                if name in used_names:
+                    name = f"{stem}_{job_id[:8]}{path.suffix}"
+                used_names.add(name)
+                zf.write(path, arcname=name)
+        size = tmp.tell()
+        tmp.seek(0)
+    except BaseException:
+        tmp.close()
+        raise
 
-    return FileResponse(
-        tmp.name,
-        filename="vivid_dub_all.zip",
+    return StreamingResponse(
+        iter(lambda: tmp.read(1024 * 1024), b""),
         media_type="application/zip",
-        background=BackgroundTask(os.unlink, tmp.name),
+        headers={
+            "Content-Length": str(size),
+            "Content-Disposition": 'attachment; filename="vivid_dub_all.zip"',
+        },
+        background=BackgroundTask(tmp.close),
     )
 
 
@@ -1022,6 +1035,7 @@ def _run_job(job_id: str) -> None:
             if state in ("pause", "cancel"):
                 return _finish_control(job_id, state)
             outputs = [p for p in (output_video, output_dubbed_video, output_burned_video) if p.is_file()]
+            _free_gpu()  # a resident VieNeu left NVENC no VRAM for a 1080p cut
             for path in outputs:
                 remove_section(path, path.with_suffix(".cut.mp4"), _time_seconds(opts.get("cut_start") or "0"),
                                _time_seconds(opts["cut_end"]) if opts.get("cut_end") else None)
@@ -1043,7 +1057,8 @@ def _run_job(job_id: str) -> None:
                              and not opts.get("trim_start") and not opts.get("trim_end"))
                 source_lang = opts.get("source_lang", "en")
                 input_path, source_title, source_channel = download_video(
-                    video_url, job_dir, sub_lang=source_lang if want_subs else "")
+                    video_url, job_dir, preferred_height=int(opts.get("video_height", 1080)),
+                    sub_lang=source_lang if want_subs else "")
                 _add_file(job_id, "input", input_path)
                 blocks = _youtube_subtitles(job_dir, source_lang, float(probe_media(input_path)["format"]["duration"]))
                 if blocks:
@@ -1406,7 +1421,8 @@ def main():
 
     import uvicorn
     print(f"Vietnamese Video Dubber: http://{args.host}:{args.port}")
-    uvicorn.run(app, host=args.host, port=args.port)
+    # Without a timeout, one stalled download blocks Ctrl+C forever.
+    uvicorn.run(app, host=args.host, port=args.port, timeout_graceful_shutdown=5)
     # Ctrl+C: the worker thread may be mid-CUDA, and torch's atexit finalizers then hang or abort
     # ("terminate called without an active exception"). Every job change is already in jobs.json and a
     # half-done step reruns on the next start, so skip interpreter teardown.
