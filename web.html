@@ -1654,6 +1654,9 @@ form.addEventListener('submit', async event => {
       srtFileInput.value = '';
       resetDrop();
     }
+    // The credit belongs to these videos; a typed name kept for the next batch would block the channel autofill.
+    sourceCredit.value = '';
+    delete sourceCredit.dataset.auto;
     addDialog.close();
   } catch (error) {
     finishWithError(error);
