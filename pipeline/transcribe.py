@@ -129,6 +129,8 @@ class FasterWhisperTranscriber:
                 # it too (91-min interview: none after 9:47 -> 354 run-on cues of ~207 chars). Independent windows
                 # kept it all the way through (1,279 sentence marks) and ran a bit faster.
                 condition_on_previous_text=False,
+                # Not the video title as extra hotwords: on a 25-min zh video it fixed 栈道 (站道) but halved the
+                # punctuation or, as "关键词：<title>", looped (哈喽 x26, 岳 x30) and merged cues (389 -> 204 segments).
                 hotwords=_PUNCTUATION_PROMPTS.get(kwargs.get("language")),
                 **kwargs,
             )
