@@ -1315,6 +1315,7 @@ function updateSourceUi() {
   startBtn.disabled = false;
 }
 sourceRadios.forEach(r => r.addEventListener('change', updateSourceUi));
+updateSourceUi();  // the browser restores the checked radio on reload without firing change
 
 resolveBtn.addEventListener('click', async () => {
   const value = videoUrl.value.trim();
