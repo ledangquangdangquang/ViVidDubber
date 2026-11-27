@@ -490,7 +490,7 @@ details.more[open] > summary { margin-block-end: var(--space-sm); }
         <h3 class="group-title" data-i18n="g_source">source</h3>
         <div class="tabs" role="radiogroup" data-i18n-attr="aria-label:source_aria">
           <label><input type="radio" name="source" value="file" checked>file</label>
-          <label><input type="radio" name="source" value="url">youtube</label>
+          <label><input type="radio" name="source" value="url">youtube · bilibili</label>
         </div>
         <div id="fileSource">
           <input class="file-input" id="videoFile" name="file" type="file" accept="video/*,.mkv,.mov,.mp4,.webm,.avi,.m4v" multiple aria-required="true">
@@ -501,7 +501,7 @@ details.more[open] > summary { margin-block-end: var(--space-sm); }
         </div>
         <div id="urlSource" class="field" hidden>
           <div class="inline">
-            <textarea class="text-input" id="videoUrl" name="video_url" rows="3" placeholder="https://youtu.be/…&#10;https://youtu.be/…" data-i18n-attr="aria-label:youtube_link"></textarea>
+            <textarea class="text-input" id="videoUrl" name="video_url" rows="3" placeholder="https://youtu.be/…&#10;https://www.bilibili.com/video/BV…" data-i18n-attr="aria-label:youtube_link"></textarea>
             <button type="button" id="resolveBtn" class="btn" data-i18n="analyze">analyze</button>
           </div>
           <div id="videoList" class="video-list" hidden></div>
@@ -783,8 +783,8 @@ const I18N = {
     g_source: 'source', source_aria: 'Video source',
     drop_title: 'Choose or drop videos', drop_meta: 'MP4 · MOV · MKV · WEBM · AVI · M4V · processed in order',
     files_n: '{n} videos', files_meta: '{n} files · {size} · processed in order', no_files: 'No video yet. Pick at least one file.',
-    youtube_link: 'YouTube link', video_height: 'resolution (max)', analyze: 'analyze', analyzing: 'Analyzing…',
-    no_link: 'No link yet. Paste a YouTube link above.', resolve_failed: 'Analyzing the link failed: {msg}',
+    youtube_link: 'YouTube / Bilibili link', video_height: 'resolution (max)', analyze: 'analyze', analyzing: 'Analyzing…',
+    no_link: 'No link yet. Paste a YouTube or Bilibili link above.', resolve_failed: 'Analyzing the link failed: {msg}',
     trim_from: 'cut from', trim_to: 'to', trim_end_ph: 'end of video', trim_title: 'e.g. 90, 1:30, 1:02:03',
     g_recog: 'recognition & translation', video_lang: 'video language',
     lang_en: 'English', lang_zh: 'Chinese', lang_ja: 'Japanese',
@@ -881,8 +881,8 @@ const I18N = {
     g_source: 'nguồn', source_aria: 'Nguồn video',
     drop_title: 'Chọn hoặc thả nhiều video', drop_meta: 'MP4 · MOV · MKV · WEBM · AVI · M4V · chạy lần lượt',
     files_n: '{n} video', files_meta: '{n} file · {size} · chạy lần lượt', no_files: 'Chưa có video. Chọn ít nhất một file để tiếp tục.',
-    youtube_link: 'Link YouTube', video_height: 'độ phân giải (tối đa)', analyze: 'phân tích', analyzing: 'Đang phân tích…',
-    no_link: 'Chưa có link. Dán link YouTube vào ô trên.', resolve_failed: 'Phân tích link thất bại: {msg}',
+    youtube_link: 'Link YouTube / Bilibili', video_height: 'độ phân giải (tối đa)', analyze: 'phân tích', analyzing: 'Đang phân tích…',
+    no_link: 'Chưa có link. Dán link YouTube hoặc Bilibili vào ô trên.', resolve_failed: 'Phân tích link thất bại: {msg}',
     trim_from: 'cắt từ', trim_to: 'đến', trim_end_ph: 'hết video', trim_title: 'Vd: 90, 1:30, 1:02:03',
     g_recog: 'nhận dạng & dịch', video_lang: 'ngôn ngữ video',
     lang_en: 'Tiếng Anh', lang_zh: 'Tiếng Trung', lang_ja: 'Tiếng Nhật',
@@ -2008,7 +2008,7 @@ function renderDetails(job) {
   const d = job.downloads || {};
   document.getElementById('detailName').textContent = o.original_stem || job.id;
   document.getElementById('detailClose').hidden = job.id !== selectedJobId;
-  document.getElementById('detailMeta').textContent = [job.id, o.video_url ? [t('src_youtube'), o.source_channel].filter(Boolean).join(' · ') : t('src_file')].join(' · ');
+  document.getElementById('detailMeta').textContent = [job.id, o.video_url ? [/bilibili\.com|b23\.tv/.test(o.video_url) ? 'Bilibili' : t('src_youtube'), o.source_channel].filter(Boolean).join(' · ') : t('src_file')].join(' · ');
 
   const rows = stepStates(job).map(step => {
     const li = detailEl('li');
@@ -2048,7 +2048,7 @@ function renderDetails(job) {
   if (o.cut_start || o.cut_end) kv.push(['k_out_cut', `${o.cut_start || '0:00'} → ${o.cut_end || t('trim_end_ph')}`]);
   if (mode === 'full') {
     kv.push(['k_lang', t(`lang_${o.source_lang || 'en'}`)]);
-    kv.push(['k_whisper', o.subtitle_source === 'youtube' ? 'YouTube subtitles' : `${o.whisper_model || 'small'} · ${o.whisper_device_used || o.whisper_device || 'cpu'}`]);
+    kv.push(['k_whisper', o.subtitle_source === 'youtube' ? 'uploader subtitles' : `${o.whisper_model || 'small'} · ${o.whisper_device_used || o.whisper_device || 'cpu'}`]);
     const providers = { google: 'Google', huggingface: 'Hy-MT2-1.8B', envit5: 'EnViT5' };
     kv.push(['k_translate', o.translate === 'false' ? t('v_off') : providers[o.translation_provider] || o.translation_provider || '—']);
   }

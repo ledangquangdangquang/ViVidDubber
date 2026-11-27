@@ -33,7 +33,7 @@ MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
 _TIME_RE = re.compile(r"\d+(:\d{1,2}){0,2}(\.\d+)?")  # trim points: 90, 1:30, 1:02:03.5
 JOB_TTL_SECONDS = 3600 * 6  # 6 hours
 
-from pipeline.media import burn_subtitles, download_video, extract_audio, mux_soft_subtitles, probe_media, remove_section, replace_audio, resolve_video_urls, trim_video, YT_ID_RE
+from pipeline.media import burn_subtitles, download_video, extract_audio, mux_soft_subtitles, probe_media, remove_section, replace_audio, resolve_video_urls, trim_video, BILI_ID_RE, YT_ID_RE
 from pipeline.separate import separate_background
 from pipeline.subtitle import SubtitleBlock, parse_srt, split_for_display, srt_time_to_seconds, write_srt
 from pipeline.transcribe import FasterWhisperTranscriber, regroup_cues
@@ -466,29 +466,34 @@ async def resolve_url(video_url: str = Form("")):
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"Failed to resolve URL {url}: {_ANSI_RE.sub('', str(exc))}")
         for item in found:
-            if _youtube_id(item[0]) not in seen:
-                seen.add(_youtube_id(item[0]))
+            if _video_id(item[0]) not in seen:
+                seen.add(_video_id(item[0]))
                 items.append(item)
     status = _video_statuses()
-    return {"videos": [{"url": u, "title": t, "channel": c, "status": status.get(_youtube_id(u))} for u, t, c in items]}
+    return {"videos": [{"url": u, "title": t, "channel": c, "status": status.get(_video_id(u))} for u, t, c in items]}
 
 
-def _youtube_id(url: str) -> str:
-    m = YT_ID_RE.search(url)
-    return m.group(1) if m else url
+def _video_id(url: str) -> str:
+    """YouTube id, Bilibili BV id (+ `_p<n>` for part 2+ of a multi-part video), else the URL itself."""
+    if m := YT_ID_RE.search(url):
+        return m.group(1)
+    if m := BILI_ID_RE.search(url):
+        part = re.search(r"[?&]p=(\d+)", url)
+        return m.group(1) + (f"_p{part.group(1)}" if part and part.group(1) != "1" else "")
+    return url
 
 
 def _mark_video_done(url: str) -> None:
     if url:
         with _DONE_VIDEOS_FILE.open("a", encoding="utf-8") as f:
-            f.write(_youtube_id(url) + "\n")
+            f.write(_video_id(url) + "\n")
 
 
 def _video_statuses() -> dict[str, str]:
     """YouTube id -> 'done' (ever dubbed) or 'queued' (a job for it is still in the list). The UI unticks both."""
     with JOBS_LOCK:
         status = {
-            _youtube_id(j.options["video_url"]): "done" if j.status == "done" else "queued"
+            _video_id(j.options["video_url"]): "done" if j.status == "done" else "queued"
             for j in sorted(JOBS.values(), key=lambda j: j.status == "done")  # done wins over a re-queued copy
             if j.options.get("video_url") and j.status != "error"
         }
@@ -1050,7 +1055,7 @@ def _run_job(job_id: str) -> None:
 
         video_url = opts.get("video_url", "")
         if video_url:
-            state = _begin_step(job_id, "Downloading video from YouTube", 10, input_path)
+            state = _begin_step(job_id, "Downloading video", 10, input_path)
             if state is None:
                 # The uploader's own subtitles replace Whisper. Not on a cut (their times are for the whole video).
                 want_subs = (opts.get("job_mode", "full") == "full" and opts.get("has_srt") != "true"
@@ -1313,7 +1318,7 @@ def _hold_youtube_jobs() -> None:
     """YouTube blocked this IP: every later download would fail the same way within seconds and burn
     through the queue. Fail the waiting YouTube jobs now instead; /api/jobs/retry-errors re-queues them."""
     with JOBS_LOCK:
-        youtube = {jid for jid, j in JOBS.items() if j.options.get("video_url")}
+        youtube = {jid for jid, j in JOBS.items() if YT_ID_RE.search(j.options.get("video_url", ""))}
     with QUEUE_LOCK:
         held = [jid for jid in QUEUE_PENDING if jid in youtube]
         QUEUE_PENDING[:] = [jid for jid in QUEUE_PENDING if jid not in youtube]

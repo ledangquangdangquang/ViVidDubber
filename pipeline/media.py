@@ -36,10 +36,22 @@ def _ydl_common_opts() -> dict:
 
 
 YT_ID_RE = re.compile(r"(?:[?&]v=|/shorts/|/live/|youtu\.be/)([\w-]{11})")
+BILI_ID_RE = re.compile(r"bilibili\.com/(?:[\w-]+/)?video/(BV[0-9A-Za-z]{10})")
+
+
+def canonical_url(url: str) -> str:
+    """yt-dlp only knows www.bilibili.com/video/BV…: a locale path (/zh-Hans/video/…) or m.bilibili.com
+    falls through to the generic extractor, which fails with "extracted extension ('html') is unusual"."""
+    m = BILI_ID_RE.search(url)
+    if not m:
+        return url
+    part = re.search(r"[?&]p=(\d+)", url)
+    return f"https://www.bilibili.com/video/{m.group(1)}" + (f"?p={part.group(1)}" if part else "")
 
 
 def resolve_video_urls(url: str) -> list[tuple[str, str, str]]:
     """Expand a YouTube link into (url, title, channel) per video (single video → one item)."""
+    url = canonical_url(url)
     if YT_ID_RE.search(url) and "list=" not in url:
         # oEmbed: title + channel without a full yt-dlp extraction, which hits the bot check when the IP is throttled.
         query = urllib.parse.urlencode({"url": url, "format": "json"})
@@ -67,7 +79,9 @@ def resolve_video_urls(url: str) -> list[tuple[str, str, str]]:
                 if entry.get("_type") == "playlist":  # a bare channel link nests its tabs (Videos, Live, Shorts)
                     walk(entry)
                 elif entry.get("url"):
-                    items.append((entry["url"], entry.get("title") or "Untitled", _channel(entry) or _channel(info)))
+                    # Bilibili multi-part entries come without a title: "<video title> p<n>"
+                    title = entry.get("title") or f"{info.get('title') or 'Untitled'} p{len(items) + 1}"
+                    items.append((entry["url"], title, _channel(entry) or _channel(info)))
 
         walk(info)
         if not items:
@@ -82,6 +96,8 @@ def download_video(url: str, job_dir: Path, preferred_height: int = 1080, sub_la
     With `sub_lang`, the uploader's own subtitles in that language (never YouTube's auto captions: no
     punctuation, worse than Whisper) are saved next to it as `yt_sub.<lang>.srt` when the video has them."""
     import yt_dlp
+
+    url = canonical_url(url)  # also fixes jobs queued with a /zh-Hans/ or m.bilibili.com link
 
     ydl_opts = {
         "outtmpl": str(job_dir / "input.%(ext)s"),

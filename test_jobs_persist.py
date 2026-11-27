@@ -48,8 +48,16 @@ def test_restart_and_cleanup():
 def test_video_statuses():
     with tempfile.TemporaryDirectory() as d:
         app._DONE_VIDEOS_FILE = Path(d) / "done_videos.txt"
-        assert app._youtube_id("https://www.youtube.com/shorts/P11ykXwx4-k") == "P11ykXwx4-k"
-        assert app._youtube_id("https://youtu.be/Nbwv5wHQoj0?t=3") == "Nbwv5wHQoj0"
+        assert app._video_id("https://www.youtube.com/shorts/P11ykXwx4-k") == "P11ykXwx4-k"
+        assert app._video_id("https://youtu.be/Nbwv5wHQoj0?t=3") == "Nbwv5wHQoj0"
+        assert app._video_id("https://www.bilibili.com/video/BV17x411w7KC/?spm_id_from=333&vd_source=x") == "BV17x411w7KC"
+        assert app._video_id("https://www.bilibili.com/video/BV17x411w7KC?p=1") == "BV17x411w7KC"
+        assert app._video_id("https://www.bilibili.com/video/BV17x411w7KC?p=3") == "BV17x411w7KC_p3"
+        assert app._video_id("https://www.bilibili.com/zh-Hans/video/BV1dj1EzVE4L/") == "BV1dj1EzVE4L"
+        from pipeline.media import canonical_url
+        assert canonical_url("https://www.bilibili.com/zh-Hans/video/BV1dj1EzVE4L/?spm=1") == "https://www.bilibili.com/video/BV1dj1EzVE4L"
+        assert canonical_url("https://m.bilibili.com/video/BV17x411w7KC?p=3") == "https://www.bilibili.com/video/BV17x411w7KC?p=3"
+        assert canonical_url("https://youtu.be/Nbwv5wHQoj0") == "https://youtu.be/Nbwv5wHQoj0"
         app.JOBS["q"] = app.JobState(id="q", options={"video_url": "https://www.youtube.com/watch?v=AAAAAAAAAAA"})
         app.JOBS["e"] = app.JobState(id="e", status="error", options={"video_url": "https://www.youtube.com/watch?v=BBBBBBBBBBB"})
         app._mark_video_done("https://www.youtube.com/watch?v=CCCCCCCCCCC")

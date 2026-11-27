@@ -245,6 +245,9 @@ Kiểm tra ô ngôn ngữ video. Video tiếng Nhật mà chạy với "Tiếng 
 **Job báo lỗi "Whisper không nhận ra lời nói nào…"?**
 Video (hoặc đoạn đã cắt) không có lời nói, ví dụ chỉ có nhạc.
 
+**Video Bilibili chỉ 360p, hoặc không lấy được phụ đề?**
+Link Bilibili (`bilibili.com/video/BV…`, video nhiều phần thì mỗi phần một job) chạy như link YouTube, nhưng khi chưa đăng nhập Bilibili chỉ cho tối đa 360p và không cho phụ đề CC. Chạy server với cookie của trình duyệt đang đăng nhập Bilibili (đóng trình duyệt trước): `YTDLP_COOKIES_FROM_BROWSER=firefox uv run python app.py`. Khi đó phụ đề CC của người đăng thay cho Whisper; phụ đề AI của Bilibili (`ai-zh`) và danmaku thì không dùng.
+
 **YouTube báo "Sign in to confirm you're not a bot"?**
 yt-dlp cần một JavaScript runtime để giải thử thách của YouTube; thiếu nó thì YouTube coi request là bot. App tự bật **Node.js** hoặc **Deno** (cài một trong hai), còn bộ giải đi kèm dependency `yt-dlp-ejs`, nên thường chỉ cần `uv sync` và có JS runtime trên `PATH`. Khi một job dính lỗi này, app dừng luôn các job YouTube còn lại thay vì để lỗi từng cái; xử lý xong thì bấm **↻ retry failed**. Vẫn bị chặn (log có `HTTP Error 429: Too Many Requests` nghĩa là IP đang bị giới hạn, cập nhật yt-dlp không giúp được)? Chờ vài tiếng, khởi động lại router để đổi IP, hoặc dùng cookie YouTube của bạn:
 
